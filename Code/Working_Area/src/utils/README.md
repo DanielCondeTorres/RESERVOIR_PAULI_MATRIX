@@ -436,3 +436,234 @@ This function performs the following linear mapping on the coefficients:
 3.  **Clone & Modify:** Take the kept terms, clone them, attach $Z_k$ (or $X_k, Y_k$), and scale them by the input value $u$ (or $r_x, r_y$).
 
 This is the mathematically correct way to **erase old data** and **write new data** into a specific qubit within a highly entangled quantum system.
+
+
+
+
+
+
+
+# ⚛️  Dynamics & Time Integration `dynamics.jl`
+
+This module  handles the **time evolution of a quantum system**. It solves the differential equations governing the system using the **4th-order Runge-Kutta method (RK4)**.
+
+---
+
+## 1. The Differential Equation (derivative)
+
+The core of the simulation is solving the **equation of motion** for an operator $O$ (which represents the density matrix $\rho$ in the **Schrödinger picture** or an observable in the **Heisenberg picture**).
+
+The code implements the **Heisenberg equation of motion** (or the **Liouville–von Neumann equation**):
+
+$$
+\frac{dO}{dt} = \mathcal{L}(O) = i[H, O]
+$$
+
+Where:
+
+- $O$ is the operator being evolved (e.g., the density matrix $\rho$).
+- $H$ is the **Hamiltonian** of the system.
+- $[H, O] = HO - OH$ is the **commutator**.
+- $i$ is the imaginary unit.
+
+In the code, the function `derivative(O, H)` computes this rate of change. It iterates over the **Pauli strings** of $O$ and $H$, calculates their commutator using symplectic algebra, and returns the gradient:
+
+$$
+\frac{dO}{dt}
+$$
+
+---
+
+## 2. Numerical Integration: Runge-Kutta 4 (step_rk4)
+
+Since the differential equation cannot always be solved analytically for complex many-body systems, we use **numerical integration** to advance the system from time $t$ to $t + dt$.
+
+The **classic Runge-Kutta method (RK4)** is used. It is a **fourth-order iterative method**, meaning the local error is of order $O(dt^5)$, providing much higher accuracy than the standard Euler method ($O(dt^2)$).
+
+---
+
+### Mathematical Formulation
+
+To solve 
+
+$$
+\frac{dO}{dt} = f(t, O)
+$$
+
+for a time step $dt$, RK4 computes four "slopes" ($k_1$ through $k_4$) and takes a weighted average to estimate the next state.
+
+1. **Initial slope ($k_1$):**
+
+$$
+k_1 = f(t, O_t)
+$$
+
+2. **Midpoint slope A ($k_2$):**
+
+$$
+k_2 = f\Big(t + \frac{dt}{2}, \, O_t + \frac{dt}{2} k_1 \Big)
+$$
+
+3. **Midpoint slope B ($k_3$):**
+
+$$
+k_3 = f\Big(t + \frac{dt}{2}, \, O_t + \frac{dt}{2} k_2 \Big)
+$$
+
+4. **End slope ($k_4$):**
+
+$$
+k_4 = f(t + dt, \, O_t + dt \cdot k_3)
+$$
+
+---
+
+### Update Step
+
+The final state $O_{t+dt}$ is calculated as a weighted average of these slopes:
+
+$$
+O_{t+dt} = O_t + \frac{dt}{6} \, (k_1 + 2k_2 + 2k_3 + k_4)
+$$
+
+In the code, the function `step_rk4` performs these exact operations using the `derivative` function as $f(O)$ and `add_ops` to perform intermediate vector additions.
+
+---
+
+### Why RK4?
+
+- **Stability:** RK4 handles oscillatory quantum dynamics (unitary evolution) much better than lower-order methods, conserving probability (trace) and energy more accurately over long simulations.  
+- **Efficiency:** It allows for larger time steps $dt$ while maintaining high precision, reducing the total number of iterations required.
+
+
+
+
+
+# ⚛️  Pauli Algebra Utilities (`src/utils/pauli_algebra.jl`)
+
+This module provides **fundamental linear algebra operations** on `PauliString` objects and quantum operators. It handles the low-level logic for multiplication, commutation, addition, and memory management (truncation) of operators.
+
+-----
+
+## Constants
+
+```julia
+const TOLERANCE = 1e-15
+```
+
+  * **Description:** A numerical threshold used to discard very small coefficients during operator addition. This prevents the accumulation of "floating-point noise" (e.g., `1.0e-18`) which should theoretically be zero.
+
+-----
+
+## Functions
+
+### 1\. Multiplying Pauli Strings
+
+```julia
+multiply_paulis(p1::PauliString, p2::PauliString) -> (phase, p_new)
+```
+
+**Description:**
+Computes the product of two Pauli strings $P_1$ and $P_2$.
+
+**Returns:**
+
+  * `phase`: A complex scalar ($1, -1, i, -i$) representing the phase factor resulting from the Pauli multiplication rules.
+  * `p_new`: A new `PauliString` object corresponding to the product of the two inputs.
+
+**Implementation Details:**
+
+1.  The `x_mask` and `z_mask` of the two strings are combined using bitwise XOR (`⊻`) to determine the resulting operator structure.
+2.  The function iterates over the qubits where both operators act non-trivially to compute the global phase based on the following multiplication table ($1=X, 2=Z, 3=Y$):
+
+| Type 1 | Type 2 | Phase Update | Math Equivalent |
+| :---: | :---: | :--- | :--- |
+| 1 ($X$) | 2 ($Z$) | `phase *= -1.0im` | $XZ = -iY$ |
+| 2 ($Z$) | 1 ($X$) | `phase *= 1.0im` | $ZX = iY$ |
+| 2 ($Z$) | 3 ($Y$) | `phase *= -1.0im` | $ZY = -iX$ |
+| 3 ($Y$) | 2 ($Z$) | `phase *= 1.0im` | $YZ = iX$ |
+| 3 ($Y$) | 1 ($X$) | `phase *= -1.0im` | $YX = -iZ$ |
+| 1 ($X$) | 3 ($Y$) | `phase *= 1.0im` | $XY = iZ$ |
+
+-----
+
+### 2\. Commutator of Pauli Strings
+
+```julia
+commutator(p1::PauliString, p2::PauliString) -> (val, p_new)
+```
+
+**Description:**
+Computes the commutator defined as 
+
+$[P_1, P_2] = P_1 P_2 - P_2 P_1$.
+
+**Returns:**
+
+  * If the strings **commute**: Returns `(0.0im, PauliString(0,0))`.
+  * If the strings **anticommute**: Returns `(2 * phase, p_new)`, where `phase` and `p_new` are the result of the multiplication.
+
+**Implementation Details:**
+It efficiently checks whether the strings anticommute using symplectic bitwise logic. Two Pauli strings anticommute if the overlap of their X and Z masks has an odd parity:
+
+```julia
+isodd(count_ones((p1.x_mask & p2.z_mask) ⊻ (p1.z_mask & p2.x_mask)))
+```
+
+  * If **Odd**: They anticommute ($P_1 P_2 = - P_2 P_1$), so the commutator is $2 P_1 P_2$.
+  * If **Even**: They commute ($P_1 P_2 = P_2 P_1$), so the commutator is $0$.
+
+-----
+
+### 3\. Operator Addition
+
+```julia
+add_ops(A::Operator, B::Operator, scale_B::ComplexF64)
+```
+
+**Description:**
+Performs a linear combination of two operators, $A$ and $B$, scaling $B$ by a factor:
+
+$ C = A + (\text{scale\_B} \cdot B) $
+
+**Implementation Details:**
+
+1.  Creates a copy of operator $A$ (called $C$).
+2.  Iterates over every term in operator $B$.
+3.  Adds the coefficient of $B$ (multiplied by `scale_B`) to the corresponding term in $C$.
+4.  **Filtering:** If the resulting coefficient absolute value is smaller than `TOLERANCE`, the term is removed from the map to keep the operator sparse and efficient.
+
+**Returns:**
+
+  * `C`: The resulting summed operator.
+
+-----
+
+### 4\. Operator Truncation
+
+```julia
+truncate_operator!(O::Operator, max_terms::Int)
+```
+
+**Description:**
+Reduces the size of operator `O` by keeping only the `max_terms` with the largest coefficients (in absolute value). This is an approximation method used to prevent exponential memory growth during time evolution.
+
+**Implementation Details:**
+
+1.  Converts the operator `O` into a list of `(PauliString, coefficient)` tuples.
+2.  Sorts this list by coefficient magnitude (`abs(c)`) in descending order.
+3.  Clears the original operator data.
+4.  Re-inserts only the top `max_terms`.
+
+**Note:** The `!` at the end of the function name indicates that this is an **in-place operation**, meaning it modifies the input operator `O` directly rather than returning a new one.
+
+-----
+
+## Summary
+
+This module provides the essential mathematical engine for the simulation:
+
+  * **Multiplication:** Handles quantum phase factors correctly.
+  * **Commutation:** Determines dynamic evolution direction.
+  * **Addition:** Handles linear combinations with noise filtering.
+  * **Truncation:** Manages computational resources by approximating complex operators.
