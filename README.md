@@ -138,3 +138,135 @@ When you run this, the plot will show:
 3.  **Qubit 2, 3, 4, 5:** Progressively smaller, smoother, and more delayed waves. This represents the **fading memory** of the reservoir.
 
 This demonstrates that the quantum system acts as a **non-linear fading memory filter**, which is the core requirement for Reservoir Computing.
+
+
+
+
+
+
+
+
+
+
+# Time Series Quantum Reservoir Computing with Weak and Projective Measurements
+
+**Paper Reference:** [arXiv:2205.06809](https://arxiv.org/abs/2205.06809)  
+**Authors:** P. Mujal, R. Martínez-Peña, G. L. Giorgi, M. C. Soriano, R. Zambrini.
+
+## Overview
+
+This document outlines the mathematical framework for **Quantum Reservoir Computing (QRC)** applied to time-series processing, specifically focusing on the **Online Protocol (OLP)** using weak measurements.
+
+The core challenge addressed is the **Measurement Problem**: Extracting information from a quantum system (to read the output) typically collapses the wavefunction, destroying the fading memory required for time-series prediction. The solution proposed is a trade-off using **Weak Measurements** on an **Ensemble** of systems.
+
+---
+
+## 1. System Representation: The Density Matrix
+
+Unlike closed quantum systems described by state vectors $|\psi\rangle$, this protocol operates in an open system regime involving measurement back-action and noise. Therefore, the system is described by the **Density Matrix** $\rho$.
+
+$$\rho = \sum_i p_i |\psi_i\rangle\langle\psi_i|$$
+
+**Why $\rho$?**
+* **Mixed States:** It can represent classical uncertainty (statistical mixtures) arising from system-environment interaction.
+* **Decoherence:** It quantifies the loss of quantum memory (coherences, $\rho_{i \neq j} \to 0$) caused by the measurement process.
+
+---
+
+## 2. Input Injection and Dynamics
+
+The reservoir processes information by encoding the time-series input $s_k$ (at time step $k$) into the dynamics of the quantum system.
+
+### The Hamiltonian
+The input $s_k$ modulates the system's Hamiltonian:
+
+$$H(s_k) = H_{internal} + s_k H_{input}$$
+
+* $H_{internal}$: Defines the reservoir's natural topology and interactions.
+* $H_{input}$: Couplings used to inject the data.
+
+### Unitary Evolution
+For a time step $\Delta t$, the evolution operator is:
+
+$$U(s_k) = e^{-i H(s_k) \Delta t}$$
+
+The state update rule (pre-measurement) follows unitary conjugation:
+
+$$\tilde{\rho}_k = \mathcal{U}(s_k)[\rho_{k-1}] = U(s_k) \rho_{k-1} U(s_k)^\dagger$$
+
+This step maps the linear input $s_k$ into a high-dimensional, non-linear quantum feature space, mixing the current input with the system's history (memory).
+
+---
+
+## 3. The Online Protocol (OLP): Weak Measurements
+
+Instead of performing a strong projective measurement (which resets the state), the OLP uses **Weak Measurements**. This extracts partial information while minimizing the disturbance (back-action) to the state.
+
+### Kraus Operators
+The measurement is defined by a set of Kraus operators $\{M_r\}$ satisfying $\sum M_r^\dagger M_r = \mathbb{I}$. For an observable $\hat{O}$, we parameterize the measurement strength by $\epsilon$:
+
+$$M_{\pm} \approx \sqrt{\frac{1}{2}} (\mathbb{I} \pm \epsilon \hat{O})$$
+
+* **$\epsilon \to 0$:** Identity operation (no information, no disturbance).
+* **$\epsilon \to 1$:** Projective measurement (maximum information, state collapse).
+
+### Back-Action (State Update)
+Upon obtaining a measurement outcome $r$ (e.g., $\pm 1$), the state is updated:
+
+$$\rho_k = \frac{M_r \tilde{\rho}_k M_r^\dagger}{\text{Tr}(M_r^\dagger M_r \tilde{\rho}_k)}$$
+
+**Key Insight:** If $\epsilon$ is small, $\rho_k \approx \tilde{\rho}_k$. The off-diagonal elements (quantum coherences) are preserved, maintaining the "fading memory" required for future predictions.
+
+---
+
+## 4. The Ensemble Strategy
+
+Since a single weak measurement yields a noisy outcome dominated by quantum randomness, the protocol relies on spatial averaging over an **Ensemble** of $N_{meas}$ identical copies of the reservoir running in parallel.
+
+### Output Extraction
+At step $k$, the output value $v_k$ is the average over the ensemble outcomes:
+
+$$v_k = \langle \hat{O} \rangle_{est} = \frac{N(+) - N(-)}{N_{meas}}$$
+
+### The Trade-off
+To maintain a constant Signal-to-Noise Ratio (SNR) while reducing the interaction strength $\epsilon$ (to protect memory), the size of the ensemble must increase:
+
+$$N_{meas} \propto \frac{1}{\epsilon^2}$$
+
+This demonstrates that **time resources** (restarting the experiment) can be exchanged for **spatial resources** (running parallel copies).
+
+---
+
+## 5. Readout Layer (Classical Post-Processing)
+
+The quantum reservoir acts as a fixed, non-linear feature extractor. The final prediction is performed by a simple classical linear layer.
+
+### State Vector
+We construct a feature vector $\mathbf{x}_k$ from the estimated expectation values of various observables (or nodes):
+
+$$\mathbf{x}_k = [v^{(1)}_k, v^{(2)}_k, \dots, v^{(N)}_k, 1]^T$$
+
+### Linear Prediction
+The target prediction $y_k$ is a linear combination of the reservoir states:
+
+$$y_k = \mathbf{W}_{out} \cdot \mathbf{x}_k$$
+
+### Training
+The output weights $\mathbf{W}_{out}$ are trained using **Ridge Regression** (Tikhonov regularization) to minimize the error between the predicted output and the target time series:
+
+$$\mathbf{W}_{out} = \mathbf{Y}_{target} \mathbf{X}^T (\mathbf{X} \mathbf{X}^T + \gamma \mathbb{I})^{-1}$$
+
+* $\mathbf{Y}_{target}$: The target time series.
+* $\mathbf{X}$: The matrix of collected reservoir states over time.
+* $\gamma$: Regularization parameter.
+
+---
+
+## Summary of the OLP Loop
+
+1.  **Inject:** Apply $s_k$ to the ensemble state $\rho_{k-1}$ via unitary evolution $U(s_k)$.
+2.  **Weak Measure:** Apply operators $M_{\pm}$ with strength $\epsilon$ to all copies.
+3.  **Update:** The state becomes $\rho_k$ (slightly mixed/decohered but memory is preserved).
+4.  **Readout:** Calculate average $v_k$ from the ensemble to generate the output.
+5.  **Repeat:** Proceed to $s_{k+1}$ without resetting the system.
+
