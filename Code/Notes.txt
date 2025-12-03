@@ -1,0 +1,22 @@
+Injection is not unitary
+the Krauss operators is not true in general is true is only true con dos outcomes:
+
+injection esta bien,
+la g es otro parametro
+
+2.2 de sus apuntes measurement channel ecuaciones 15 ...
+e**-g**2?  
+
+boolenao para el de hesiengberg
+
+Each step:
+sk-> O-O-O-O-O
+O-O-O-O-O 
+
+
+Buscar referencia para los signo de dp/dt y dO/dt
+
+The J should be at random!
+no truncar si son pequeñas los sites!
+
+Añadir un estado para el resto de qubits poner 0 a todos los qubits inicialmente
