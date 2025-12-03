@@ -77,7 +77,7 @@ function build_paper_hamiltonian(n_qubits::Int, J_scale::Float64, h::Float64; se
     # Término de campo transversal
     for i in 0:(n_qubits-1)
         p_x = PauliString(1 << i, 0)
-        H[p_x] = get(H, p_x, 0.0im) + h
+        H[p_x] = get(H, p_x, 0.0im) - h
     end
     
     return H

@@ -25,3 +25,27 @@ function initial_state_all_zeros(n_qubits::Int)
     
     return rho
 end
+
+
+
+
+
+"""
+    initial_state_x_first(n_qubits::Int)
+
+Devuelve el estado ρ = X ⊗ I ⊗ ... ⊗ I.
+Este es un estado "Sparse" (disperso) ideal para simulaciones grandes (N=20),
+ya que solo contiene 1 término en lugar de 2^N.
+"""
+function initial_state_x_first(n_qubits::Int)
+    rho = Operator()
+    
+    # Creamos una PauliString con X en el primer qubit (bit 0)
+    # x_mask = 1 (binario ...001), z_mask = 0
+    p_x1 = PauliString(1, 0) 
+    
+    # El coeficiente es 1.0
+    rho[p_x1] = 1.0 + 0.0im
+    
+    return rho
+end

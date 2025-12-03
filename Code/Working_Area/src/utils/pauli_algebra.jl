@@ -64,16 +64,49 @@ function add_ops(A::Operator, B::Operator, scale_B::ComplexF64)
     return C
 end
 
+
+#function truncate_operator!(O::Operator, max_terms::Int)
+#    if length(O) <= max_terms; return; end
+#    all_terms = collect(O)
+#    sort!(all_terms, by = x -> abs(x[2]), rev = true)
+#for i in 1:max_terms
+    #    empty!(O)
+    #    O[all_terms[i][1]] = all_terms[i][2]
+    #end
+#end
+
+
+
+
+
 """
-    truncate_operator!(O, max_terms)
-Mantiene solo los términos con coeficientes más grandes.
+    truncate_operator!(O::Operator, max_terms::Int)
+
+Implementa la estrategia de truncamiento descrita en la sección 'Simulation complexity' del texto:
+"we will truncate after the largest M Pauli coefficients."
+
+Utiliza `partialsort!` para encontrar los Top-M términos sin ordenar todo el vector (O(N) vs O(N log N)),
+lo cual es crucial para la eficiencia cuando el espacio de Hilbert es grande (N=20).
 """
-function truncate_operator!(O::Operator, max_terms::Int)
-    if length(O) <= max_terms; return; end
+function truncate_operator!(O::Operator, max_terms::Int=typemax(Int))
+    # 1. Si el operador ya es pequeño, no hacemos nada (ahorro de tiempo)
+    if length(O) <= max_terms
+        return
+    end
+    
+    # 2. Convertir el diccionario a un vector de pares (PauliString, Coeff)
     all_terms = collect(O)
-    sort!(all_terms, by = x -> abs(x[2]), rev = true)
+    
+    # 3. SELECCIÓN DE LOS TOP-M (Optimizada según el texto)
+    # Usamos partialsort! para encontrar solo los 'max_terms' coeficientes más grandes
+    # en valor absoluto (abs(x[2])), ordenados de mayor a menor (rev=true).
+    # Esto evita ordenar la "cola" de coeficientes pequeños que vamos a borrar.
+    top_terms = partialsort!(all_terms, 1:max_terms, by = x -> abs(x[2]), rev = true)
+    
+    # 4. RECONSTRUCCIÓN
+    # Vaciamos el operador original y reinsertamos solo los supervivientes
     empty!(O)
-    for i in 1:max_terms
-        O[all_terms[i][1]] = all_terms[i][2]
+    for (p, c) in top_terms
+        O[p] = c
     end
 end

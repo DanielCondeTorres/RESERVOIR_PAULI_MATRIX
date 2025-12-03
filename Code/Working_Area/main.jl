@@ -1,109 +1,103 @@
 using LinearAlgebra
 using Random
+using Plots # Necesario para plot_stm_capacity
 
-# --- IMPORTACIÓN DE MÓDULOS ---
+# --- CARGAR MÓDULOS ---
 include("src/operator_terms/pauli.jl")      
-include("src/operator_terms/hamiltonian.jl") # Modificado
+include("src/operator_terms/hamiltonian.jl")
 include("src/utils/pauli_algebra.jl")       
 include("src/utils/dynamics.jl")
 include("src/utils/injection.jl")
-include("src/utils/initial_state.jl")           # Nuevo (Estado Inicial)
+include("src/utils/initial_state.jl")           
+include("src/utils/qrc_training.jl") 
+include("src/visualization/plot_stm_capacity.jl") 
 
-# Importamos el ploteador de correlaciones
-include("src/visualization/plot_spin_dynamics.jl")      
-
-function run_paper_compliant_protocol()
-    # --- CONFIGURACIÓN ---
+function run_paper_replica_stm()
+    println("=== REPLICANDO FIGURA 3a (STM Capacity) ===")
+    
+    # 1. PARÁMETROS EXACTOS DEL PAPER (Sección 3.1)
     n_qubits = 6
+    n_steps = 1000
+    washout = 200
     
-    # Parámetros físicos según notas
-    J_s = 1.0           # Escala de referencia para J aleatorio
-    h = 1.5             # Campo transversal
-    dt = 0.05           # Paso de tiempo de integración
-    g_strength = 0.1    # Parámetro 'g' para la nueva fórmula de dephasing
+    Js = 1.0
+    h = 10.0      # <--- CORRECCIÓN: Campo fuerte (Paper usa 10.0)
+    dt = 10.0     # <--- CORRECCIÓN: Tiempo largo (Paper usa 10/J = 10.0)
+    g = 0.3       # <--- CORRECCIÓN: Ruido del paper (Fig 3 usa 0.3)
     
-    steps_per_input = 50 # Pasos de evolución unitaria entre inyecciones
-    n_inputs = 100
+    # Integración
+    sub_steps = 1000 # Necesitamos muchos pasos porque h=10 y dt=10 es mucha dinámica
+    dt_small = dt / sub_steps
     
-    println("=== QRC Protocol: Cumpliendo Notas y Nueva Fórmula ===")
-    println("Params: J_s=$J_s (random), h=$h, g=$g_strength, dt=$dt")
+    # 2. GENERACIÓN DE DATOS
+    # Input Continuo Uniforme [0,1] (Appendix D)
+    inputs_sk = rand(n_steps) 
     
-    # --- 1. HAMILTONIANO (Nota 38-41) ---
-    # Usamos el generador aleatorio según el paper
-    H_ising = build_paper_hamiltonian(n_qubits, J_s, h; seed=42)
+    H_ising = build_paper_hamiltonian_corrected(n_qubits, Js, h; seed=1234)
+    H_evol = Operator()
+    for (p, c) in H_ising; H_evol[p] = -c; end
+    rho = initial_state_x_first(n_qubits)
     
-    # Preparamos para Schrödinger: dρ/dt = -i[H, ρ]
-    # (Nota 36-37: verificar signo. Tu derivative usa i[H,O], así que pasamos -H)
-    H_schrodinger = Operator()
-    for (p, c) in H_ising; H_schrodinger[p] = -c; end
+    # Features Completas (Z, X, ZZ)
+    n_features = 2 * n_qubits + (n_qubits - 1)
+    reservoir_states = zeros(Float64, n_steps, n_features)
     
-    # --- 2. INPUTS (Probabilidades) ---
-    # Los inputs s_k deben ser probabilidades [0,1] para la fórmula de Bloch
-    # Usamos una onda cuadrada de probabilidades (ej: 0.1 y 0.9)
-    inputs_sk = [isodd(i) ? 0.9 : 0.1 for i in 1:n_inputs]
+    println("Simulando con dt=$dt, h=$h, g=$g...")
     
-    # --- 3. ESTADO INICIAL (Nota 46-47) ---
-    # Empezamos en |000...0>
-    println("Inicializando sistema en estado |000...0>...")
-    rho = initial_state_all_zeros(n_qubits)
-    
-    # --- PREPARACIÓN DE DATOS PARA PLOT ---
-    # Mediremos Correlaciones con el Input: Z0Z1, Z0Z2...
-    n_correlations = n_qubits - 1
-    times = Float64[]
-    results = zeros(Float64, n_inputs, n_correlations)
-    
-    labels_list = ["Z0Z$i" for i in 1:(n_qubits-1)]
-    labels_matrix = reshape(labels_list, 1, n_correlations)
-    
-    println("Simulando ciclo: Inject -> Evolve -> Measure...")
-    
-    for k in 1:n_inputs
+    for k in 1:n_steps
         s_k = inputs_sk[k]
         
-        # --- PASO A: INYECCIÓN (Inject) ---
-        # Calcular vector de Bloch basado en s_k (Nota 98-101)
-        # |ψ_k> = sqrt(1-s_k)|0> + sqrt(s_k)|1>
-        # r_z = 1 - 2*s_k
-        # r_x = 2 * sqrt(s_k * (1 - s_k))
+        # A) INYECCIÓN (Inject)
         rz_val = 1.0 - 2.0 * s_k
-        rx_val = 2.0 * sqrt(s_k * (1.0 - s_k))
+        rx_val = 2.0 * sqrt(s_k * (1.0 - s_k)) 
+        rho = inject_state(rho, 0, rz_val, rx=rx_val)
         
-        # Usamos la función unificada inyectando en Z y X
-        rho = inject_state(rho, 0, rz_val; rx=rx_val)
-        
-        # --- PASO B: EVOLUCIÓN (Evolve) ---
-        # 1. Evolución Unitaria (Hamiltoniano)
-        for s in 1:steps_per_input
-            rho = step_rk4(rho, H_schrodinger, dt)
+        # B) EVOLUCIÓN UNITARIA (La Nube)
+        # El sistema mezcla la información durante dt=10.0
+        for _ in 1:sub_steps
+            rho = step_rk4(rho, H_evol, dt_small)
+            truncate_operator!(rho, 2000) 
         end
         
-        # 2. Evolución No-Unitaria (Dephasing) - APLICADA UNA VEZ POR INPUT
-        # Usamos la nueva función con la fórmula exponencial
-        rho = apply_global_dephasing(rho, g_strength)
+        # C) DEPHASING / MEDICIÓN (Eq 15)
+        # Se aplica UNA VEZ por paso temporal macroscópico
+        rho = apply_global_dephasing(rho, g)
         
-        # --- PASO C: MEDICIÓN (Measure) ---
-        push!(times, k)
-        
-        # Medir correlaciones Z0Zi
-        bit_0 = 1 << 0
+        # D) READOUT (Guardar estado)
         col_idx = 1
-        for q in 1:(n_qubits-1)
-            bit_q = 1 << q
-            mask_corr = bit_0 | bit_q
-            p_corr = PauliString(0, mask_corr)
-            val = real(get(rho, p_corr, 0.0im))
-            results[k, col_idx] = val
-            col_idx += 1
+        for q in 0:(n_qubits-1)
+            reservoir_states[k, col_idx] = real(get(rho, PauliString(0, 1 << q), 0.0im)); col_idx += 1
         end
+        for q in 0:(n_qubits-1)
+            reservoir_states[k, col_idx] = real(get(rho, PauliString(1 << q, 0), 0.0im)); col_idx += 1
+        end
+        for q in 0:(n_qubits-2)
+            mask_corr = (1 << q) | (1 << (q+1));
+            reservoir_states[k, col_idx] = real(get(rho, PauliString(0, mask_corr), 0.0im)); col_idx += 1
+        end
+        
+        if k % 50 == 0; print("\rPaso $k..."); end
+    end
+    println("\nSimulación finalizada.")
+
+    # 3. ENTRENAMIENTO (Machine Learning)
+    println("Calculando capacidades...")
+    max_delay = 10
+    capacities = zeros(Float64, max_delay)
+    
+    for tau in 1:max_delay
+        target = inputs_sk[1:end-tau]
+        feats = reservoir_states[tau+1:end, :]
+        
+        weights, preds = train_reservoir(feats, target, washout)
+        
+        real_target = target[washout+1:end]
+        C = calculate_capacity(real_target, preds[washout+1:end])
+        capacities[tau] = C
+        println("Tau $tau: C = $C")
     end
     
-    println("Simulación terminada.")
-    println("Últimas correlaciones Z0Zi: $(round.(results[end, :], digits=4))")
-
-    # --- GRAFICAR ---
-    # Usamos el ploteador mixto para ver las correlaciones
-    plot_mixed_dynamics(times, results, labels_matrix)
+    plot_stm_capacity(capacities, max_delay, n_qubits)
 end
 
-run_paper_compliant_protocol()
+run_paper_replica_stm()

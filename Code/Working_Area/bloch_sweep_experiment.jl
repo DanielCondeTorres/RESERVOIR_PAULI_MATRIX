@@ -7,81 +7,78 @@ include("src/operator_terms/hamiltonian.jl")
 include("src/utils/pauli_algebra.jl")
 include("src/utils/dynamics.jl")
 include("src/utils/injection.jl")
-# --- NUEVOS MÓDULOS NECESARIOS ---
-include("src/utils/initial_state.jl")           # Nuevo (Estado Inicial)
-
+include("src/utils/initial_state.jl")           
 include("src/visualization/expectation_xj_vs_step.jl") 
 
 function main()
-    println("=== REPLICANDO FIGURAS 4 y 5 DEL PAPER (Corregido) ===")
+    println("=== REPLICANDO FIGURA 2 DEL PAPER (N=20, Rápido) ===")
     
-    # 1. Configuración del Sistema (N=6)
-    n_qubits = 20
+    # 1. Configuración
+    n_qubits = 6
     k_max = 50
     
-    # --- PARÁMETROS DE TRUNCACIÓN ---
-    MAX_PAULI_STRINGS = 1024  
+    # TRUNCAMIENTO AGRESIVO (Para Fig 2) [cite: 266]
+    # Usamos 100 como pusiste en tu código anterior
+    HARD_LIMIT_TERMS = 800
     
-    # --- FÍSICA DEL PAPER ---
+    # Física
     Js = 1.0
     h_const = 10.0 * Js   
     dt = 10.0 / Js        
     g_strength = 0.3      
     
-    println("Params: N=$n_qubits, MaxStrings=$MAX_PAULI_STRINGS, h=$h_const, dt=$dt, g=$g_strength")
+    println("Params: N=$n_qubits, Truncation=$HARD_LIMIT_TERMS")
     
-    # 2. Hamiltoniano (Usamos la nueva función con distribución uniforme) 
-    # Nota: build_paper_hamiltonian ya incluye Random.seed! internamente
+    # 2. Hamiltoniano
     H_ising = build_paper_hamiltonian(n_qubits, Js, h_const; seed=1234)
-    
-    # Preparamos para ecuación de Schrödinger: dρ/dt = -i[H, ρ] [cite: 37]
     H_evol = Operator()
     for (p, c) in H_ising; H_evol[p] = -c; end
     
-    # 3. Estado Inicial |000...0> 
-    # Antes tenías rho = Operator(), que está vacío. Esto es incorrecto para rho.
-    println("Inicializando estado |000...0>...")
-    rho = initial_state_all_zeros(n_qubits)
+    # 3. ESTADO INICIAL EFICIENTE 
+    # En lugar de calcular el millón de términos de |00..0>, 
+    # empezamos con X en el primer qubit (como dice el paper para N grande).
+    println("Inicializando rho = X_0 (1 término)...")
+    rho = initial_state_x_first(n_qubits)
     
     results_X = zeros(Float64, k_max + 1, n_qubits)
     steps_vec = 0:k_max
     
     println("Iniciando simulación...")
     
+    # OPTIMIZACIÓN: 400 pasos es suficiente estabilidad para este dt
+    sub_steps = 3000 
+    dt_small = dt / sub_steps
+    
     for k in 0:k_max
-        # A) Vector de Bloch (Sweep adiabático del Paper)
+        # A) Vector de Bloch (Sweep Z -> X)
         ratio = k / k_max
         current_rx = sqrt(ratio)       
         current_rz = sqrt(1.0 - ratio) 
         
         # B) INYECCIÓN (Inject)
-        # Reseteamos Q0 y escribimos el nuevo estado
         rho = inject_state(rho, 0, current_rz, rx=current_rx)
         
-        # C) EVOLUCIÓN TEMPORAL (Evolve) [cite: 6]
-        # Primero la dinámica unitaria (Hamiltoniano)
-        sub_steps = 2500 
-        dt_small = dt / sub_steps
-        
-        for _ in 1:sub_steps
-            rho = step_rk4(rho, H_evol, dt_small)
-            truncate_operator!(rho, MAX_PAULI_STRINGS)
-        end
-        
-        # D) RUIDO (Dephasing)
-        # Aplicamos el ruido después de la evolución (o como parte de ella)
-        # Usamos la nueva función exponencial definida en quantum_channels.jl
+        # C) DEPHASING (Measure/Backaction) 
+        # Orden corregido según notas manuscritas [cite: 334]
         rho = apply_global_dephasing(rho, g_strength)
         
-        # E) MEDICIÓN <X> (Measure) [cite: 7]
-        # Medimos al final del ciclo, justo antes del siguiente paso
+        # D) EVOLUCIÓN (Evolve)
+        for _ in 1:sub_steps
+            rho = step_rk4(rho, H_evol, dt_small)
+            
+            # Truncamiento constante para velocidad
+            #truncate_operator!(rho, HARD_LIMIT_TERMS)
+            truncate_operator!(rho)
+        end
+        
+        # E) MEDICIÓN
         for q in 0:(n_qubits-1)
-            p_meas = PauliString(1 << q, 0) # Medir X
+            p_meas = PauliString(1 << q, 0)
             val = get(rho, p_meas, 0.0im)
             results_X[k+1, q+1] = real(val)
         end
         
-        if k % 5 == 0; print("."); end
+        print("\rPaso $k / $k_max listo.")
     end
     println("\nTerminado.")
     
