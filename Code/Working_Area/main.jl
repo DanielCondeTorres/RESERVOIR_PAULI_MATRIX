@@ -1,122 +1,109 @@
 using LinearAlgebra
+using Random
 
 # --- IMPORTACIÓN DE MÓDULOS ---
 include("src/operator_terms/pauli.jl")      
-include("src/operator_terms/hamiltonian.jl")
+include("src/operator_terms/hamiltonian.jl") # Modificado
 include("src/utils/pauli_algebra.jl")       
 include("src/utils/dynamics.jl")
-include("src/utils/injection.jl")           
+include("src/utils/injection.jl")
+include("src/utils/initial_state.jl")           # Nuevo (Estado Inicial)
 
-# IMPORTAMOS LOS DOS PLOTEADORES
+# Importamos el ploteador de correlaciones
 include("src/visualization/plot_spin_dynamics.jl")      
-include("src/visualization/expectation_xj_vs_step.jl")  
 
-function run_correlations_experiment()
+function run_paper_compliant_protocol()
     # --- CONFIGURACIÓN ---
     n_qubits = 6
-    J = 1.0     
-    h = 1.5      # Campo fuerte necesario para propagar la correlación
-    dt = 0.05   
-    gamma_dephasing = 0.0001 
     
-    steps_per_input = 200 
+    # Parámetros físicos según notas
+    J_s = 1.0           # Escala de referencia para J aleatorio
+    h = 1.5             # Campo transversal
+    dt = 0.05           # Paso de tiempo de integración
+    g_strength = 0.1    # Parámetro 'g' para la nueva fórmula de dephasing
+    
+    steps_per_input = 50 # Pasos de evolución unitaria entre inyecciones
     n_inputs = 100
     
-    println("=== QRC Protocol: Correlaciones con el Input (Z0Zk) ===")
+    println("=== QRC Protocol: Cumpliendo Notas y Nueva Fórmula ===")
+    println("Params: J_s=$J_s (random), h=$h, g=$g_strength, dt=$dt")
     
-    # --- HAMILTONIANO ---
-    H_ising = build_ising_hamiltonian(n_qubits, J, h)
+    # --- 1. HAMILTONIANO (Nota 38-41) ---
+    # Usamos el generador aleatorio según el paper
+    H_ising = build_paper_hamiltonian(n_qubits, J_s, h; seed=42)
+    
+    # Preparamos para Schrödinger: dρ/dt = -i[H, ρ]
+    # (Nota 36-37: verificar signo. Tu derivative usa i[H,O], así que pasamos -H)
     H_schrodinger = Operator()
     for (p, c) in H_ising; H_schrodinger[p] = -c; end
     
-    # --- SIMULACIÓN ---
-    inputs = [isodd(i) ? 0.9 : -0.9 for i in 1:n_inputs]
-    rho = Operator()
-    rho = inject_state(rho, 0, inputs[1]) 
+    # --- 2. INPUTS (Probabilidades) ---
+    # Los inputs s_k deben ser probabilidades [0,1] para la fórmula de Bloch
+    # Usamos una onda cuadrada de probabilidades (ej: 0.1 y 0.9)
+    inputs_sk = [isodd(i) ? 0.9 : 0.1 for i in 1:n_inputs]
     
-    # --- DEFINICIÓN DE COLUMNAS ---
-    # Queremos: [Z0...Z5] seguido de [Z0Z1...Z0Z5]
-    # N sitios + (N-1) correlaciones
+    # --- 3. ESTADO INICIAL (Nota 46-47) ---
+    # Empezamos en |000...0>
+    println("Inicializando sistema en estado |000...0>...")
+    rho = initial_state_all_zeros(n_qubits)
+    
+    # --- PREPARACIÓN DE DATOS PARA PLOT ---
+    # Mediremos Correlaciones con el Input: Z0Z1, Z0Z2...
     n_correlations = n_qubits - 1
-    total_cols = n_qubits + n_correlations
-    
     times = Float64[]
-    results_ordered = zeros(Float64, n_inputs, total_cols)
+    results = zeros(Float64, n_inputs, n_correlations)
     
-    # 1. Generar Etiquetas en el orden solicitado
-    labels_list = String[]
+    labels_list = ["Z0Z$i" for i in 1:(n_qubits-1)]
+    labels_matrix = reshape(labels_list, 1, n_correlations)
     
-    # Bloque A: Sitios individuales
-    for i in 0:(n_qubits-1)
-        push!(labels_list, "Z$i")
-    end
-    
-    # Bloque B: Correlaciones con Z0
-    for i in 1:(n_qubits-1)
-        push!(labels_list, "Z0Z$i")
-    end
-    
-    labels_matrix = reshape(labels_list, 1, total_cols)
-    println("Observables a medir: $labels_list")
-    
-    println("Simulando...")
+    println("Simulando ciclo: Inject -> Evolve -> Measure...")
     
     for k in 1:n_inputs
-        # A) INYECCIÓN
-        if k > 1; rho = inject_state(rho, 0, inputs[k]); end
+        s_k = inputs_sk[k]
         
-        # B) EVOLUCIÓN
+        # --- PASO A: INYECCIÓN (Inject) ---
+        # Calcular vector de Bloch basado en s_k (Nota 98-101)
+        # |ψ_k> = sqrt(1-s_k)|0> + sqrt(s_k)|1>
+        # r_z = 1 - 2*s_k
+        # r_x = 2 * sqrt(s_k * (1 - s_k))
+        rz_val = 1.0 - 2.0 * s_k
+        rx_val = 2.0 * sqrt(s_k * (1.0 - s_k))
+        
+        # Usamos la función unificada inyectando en Z y X
+        rho = inject_state(rho, 0, rz_val; rx=rx_val)
+        
+        # --- PASO B: EVOLUCIÓN (Evolve) ---
+        # 1. Evolución Unitaria (Hamiltoniano)
         for s in 1:steps_per_input
             rho = step_rk4(rho, H_schrodinger, dt)
-            rho = apply_global_dephasing(rho, gamma_dephasing)
         end
         
-        # C) MEDICIÓN (EN EL ORDEN SOLICITADO)
+        # 2. Evolución No-Unitaria (Dephasing) - APLICADA UNA VEZ POR INPUT
+        # Usamos la nueva función con la fórmula exponencial
+        rho = apply_global_dephasing(rho, g_strength)
+        
+        # --- PASO C: MEDICIÓN (Measure) ---
         push!(times, k)
         
-        col_idx = 1
-        
-        # --- PARTE 1: MEDIR SITIOS (Z0, Z1, Z2...) ---
-        for q in 0:(n_qubits-1)
-            # Pauli Z en posición q
-            p_site = PauliString(0, 1 << q)
-            val = real(get(rho, p_site, 0.0im))
-            results_ordered[k, col_idx] = val
-            col_idx += 1
-        end
-        
-        # --- PARTE 2: MEDIR CORRELACIONES CON INPUT (Z0Z1, Z0Z2...) ---
-        # El input siempre es Z0 (bit 0)
+        # Medir correlaciones Z0Zi
         bit_0 = 1 << 0
-        
+        col_idx = 1
         for q in 1:(n_qubits-1)
             bit_q = 1 << q
-            # Máscara combinada: Bit 0 Y Bit q encendidos
             mask_corr = bit_0 | bit_q
-            
             p_corr = PauliString(0, mask_corr)
             val = real(get(rho, p_corr, 0.0im))
-            results_ordered[k, col_idx] = val
+            results[k, col_idx] = val
             col_idx += 1
         end
     end
     
     println("Simulación terminada.")
+    println("Últimas correlaciones Z0Zi: $(round.(results[end, :], digits=4))")
 
-    # --- GENERACIÓN DE GRÁFICOS ---
-    
-    # 1. GRÁFICO COMPLETO (Sitios + Correlaciones Z0Zk)
-    # Llama a plot_spin_dynamics.jl
-    plot_mixed_dynamics(times, results_ordered, labels_matrix)
-    
-    # 2. GRÁFICO SOLO SITIOS
-    # Extraemos solo las primeras N columnas (Z0...Z5)
-    results_sites_only = results_ordered[:, 1:n_qubits]
-    
-    # Llama a expectation_xj_vs_step.jl
-    plot_expectation_evolution(times, results_sites_only, n_qubits)
-    
-    println("✅ Gráficos generados.")
+    # --- GRAFICAR ---
+    # Usamos el ploteador mixto para ver las correlaciones
+    plot_mixed_dynamics(times, results, labels_matrix)
 end
 
-run_correlations_experiment()
+run_paper_compliant_protocol()

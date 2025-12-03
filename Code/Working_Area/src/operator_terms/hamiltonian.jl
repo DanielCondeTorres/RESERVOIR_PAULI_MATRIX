@@ -60,18 +60,25 @@ H = - ∑ J_i Z_i Z_{i+1} - h_{const} ∑ X_i
   Esto significa que algunos enlaces pueden ser ferromagnéticos (+) y otros antiferromagnéticos (-).
 """
 
-function build_paper_hamiltonian(n_qubits::Int, J_scale::Float64, h_const::Float64)
+function build_paper_hamiltonian(n_qubits::Int, J_scale::Float64, h::Float64; seed::Int=1234)
+    Random.seed!(seed) # 1. Reproducibilidad
     H = Operator()
-    # Interacción J aleatoria centrada en 0: [-J/2, J/2]
+    
+    # Término de interacción (J_ij aleatorio centrado en 0)
     for i in 0:(n_qubits-2)
-        J_val = (rand() - 0.5) * J_scale 
-        z_mask = (1 << i) | (1 << (i+1))
-        H[PauliString(0, z_mask)] = -J_val 
+        # 2. Distribución correcta según notas: [-J/2, J/2]
+        J_val = J_scale * (rand() - 0.5)
+        
+        # 3. Construcción segura (+) y sin signo hardcodeado
+        p_zz = PauliString(0, (1 << i) | (1 << (i+1)))
+        H[p_zz] = get(H, p_zz, 0.0im) + J_val
     end
-    # Campo h CONSTANTE
+    
+    # Término de campo transversal
     for i in 0:(n_qubits-1)
-        x_mask = (1 << i)
-        H[PauliString(x_mask, 0)] = -h_const
+        p_x = PauliString(1 << i, 0)
+        H[p_x] = get(H, p_x, 0.0im) + h
     end
+    
     return H
 end
