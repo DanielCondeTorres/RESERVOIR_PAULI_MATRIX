@@ -1,6 +1,6 @@
 using LinearAlgebra
 using Random
-using Plots # Necesario para plot_stm_capacity
+using Plots
 
 # --- CARGAR MÓDULOS ---
 include("src/operator_terms/pauli.jl")      
@@ -12,75 +12,70 @@ include("src/utils/initial_state.jl")
 include("src/utils/qrc_training.jl") 
 include("src/visualization/plot_stm_capacity.jl") 
 
+# IMPORTANTE: Cargamos el nuevo módulo de mediciones
+include("src/utils/measurements.jl") 
+
 function run_paper_replica_stm()
-    println("=== REPLICANDO FIGURA 3a (STM Capacity) ===")
+    println("=== REPLICANDO FIGURA 3a (STM Capacity) - Código Limpio ===")
     
-    # 1. PARÁMETROS EXACTOS DEL PAPER (Sección 3.1)
+    # 1. PARÁMETROS
     n_qubits = 6
     n_steps = 1000
     washout = 200
+    Js = 1.0; h = 10.0; dt = 10.0; g = 0.3
     
-    Js = 1.0
-    h = 10.0      # <--- CORRECCIÓN: Campo fuerte (Paper usa 10.0)
-    dt = 10.0     # <--- CORRECCIÓN: Tiempo largo (Paper usa 10/J = 10.0)
-    g = 0.3       # <--- CORRECCIÓN: Ruido del paper (Fig 3 usa 0.3)
-    
-    # Integración
-    sub_steps = 1000 # Necesitamos muchos pasos porque h=10 y dt=10 es mucha dinámica
+    sub_steps = 1000
     dt_small = dt / sub_steps
     
-    # 2. GENERACIÓN DE DATOS
-    # Input Continuo Uniforme [0,1] (Appendix D)
-    inputs_sk = rand(n_steps) 
+    # 2. PREPARACIÓN DE MEDICIONES (Esto es nuevo)
+    # Generamos la lista de observables (PauliStrings) UNA sola vez fuera del bucle.
+    # Esto es mucho más eficiente y limpio.
+    observables_list = build_paper_basis(n_qubits)
+    n_features = length(observables_list) # 17 automáticamente
     
-    H_ising = build_paper_hamiltonian_corrected(n_qubits, Js, h; seed=1234)
+    # 3. INICIALIZACIÓN
+    inputs_sk = rand(n_steps) 
+    H_ising = build_paper_hamiltonian(n_qubits, Js, h; seed=1234)
     H_evol = Operator()
     for (p, c) in H_ising; H_evol[p] = -c; end
     rho = initial_state_x_first(n_qubits)
     
-    # Features Completas (Z, X, ZZ)
-    n_features = 2 * n_qubits + (n_qubits - 1)
+    # Matriz para guardar resultados
     reservoir_states = zeros(Float64, n_steps, n_features)
     
-    println("Simulando con dt=$dt, h=$h, g=$g...")
+    println("Simulando $n_steps pasos con $n_features features...")
     
     for k in 1:n_steps
         s_k = inputs_sk[k]
         
-        # A) INYECCIÓN (Inject)
+        # A) INYECCIÓN
         rz_val = 1.0 - 2.0 * s_k
         rx_val = 2.0 * sqrt(s_k * (1.0 - s_k)) 
         rho = inject_state(rho, 0, rz_val, rx=rx_val)
         
-        # B) EVOLUCIÓN UNITARIA (La Nube)
-        # El sistema mezcla la información durante dt=10.0
+        # B) EVOLUCIÓN
         for _ in 1:sub_steps
             rho = step_rk4(rho, H_evol, dt_small)
             truncate_operator!(rho, 2000) 
         end
         
-        # C) DEPHASING / MEDICIÓN (Eq 15)
-        # Se aplica UNA VEZ por paso temporal macroscópico
+        # C) DEPHASING (Ruido)
         rho = apply_global_dephasing(rho, g)
         
-        # D) READOUT (Guardar estado)
-        col_idx = 1
-        for q in 0:(n_qubits-1)
-            reservoir_states[k, col_idx] = real(get(rho, PauliString(0, 1 << q), 0.0im)); col_idx += 1
-        end
-        for q in 0:(n_qubits-1)
-            reservoir_states[k, col_idx] = real(get(rho, PauliString(1 << q, 0), 0.0im)); col_idx += 1
-        end
-        for q in 0:(n_qubits-2)
-            mask_corr = (1 << q) | (1 << (q+1));
-            reservoir_states[k, col_idx] = real(get(rho, PauliString(0, mask_corr), 0.0im)); col_idx += 1
-        end
+        # D) READOUT (¡AHORA ES UNA SOLA LÍNEA!)
+        # Usamos la función extract_features que definimos arriba.
+        # projective=false porque para la Figura 3a queremos los valores esperados (Expectation Values)
+        # tal como se comportaría un ensemble infinito (o promediado).
+        features_vec = extract_features(rho, observables_list)
+        
+        # Guardamos el vector en la fila k
+        reservoir_states[k, :] = features_vec
         
         if k % 50 == 0; print("\rPaso $k..."); end
     end
     println("\nSimulación finalizada.")
 
-    # 3. ENTRENAMIENTO (Machine Learning)
+    # 4. ENTRENAMIENTO
     println("Calculando capacidades...")
     max_delay = 10
     capacities = zeros(Float64, max_delay)
