@@ -15,20 +15,20 @@ include("src/utils/shot_noise.jl")
 include("src/operator_terms/hamiltonian.jl") 
 include("src/utils/measurements.jl")
 include("src/loaders/data_loader.jl") 
-
+include("src/visualization/plotting_comparission_vs_nathan.jl") 
 # ==============================================================================
 # 2. CONFIGURACIÓN DE ÍNDICES (CRÍTICO)
 # ==============================================================================
 INPUT_FILE = "6_3_2_all_zeros_12345.jld2" 
 N_SUBSTEPS = 100       
 # Queremos el Bit 1 (el segundo qubit):
-BIT_PARA_SIMULAR = [2,3]  # Para create_pauli_observable -> (2-1) = Bit 1 
-BIT_PARA_CARGAR  = [1,2]  # Para extract_nathan_data -> Posición 2 ("1Z1...") 
+BIT_PARA_CARGAR  = [1]  # Para extract_nathan_data -> Posición 2 ("1Z1...") 
 PAULI_MATRIX = "Z"
 NOISE_SHOTS = 1.5e6
 # ==============================================================================
 # 3. EJECUCIÓN
 # ==============================================================================
+BIT_PARA_SIMULAR = BIT_PARA_CARGAR .+ 1
 function run_final_validation()
     println("🚀 Iniciando Validación Final...")
 
@@ -79,15 +79,24 @@ function run_final_validation()
     end
     # D. Graficar
     println("\n✅ Finalizado.")
-    #len = min(length(nathan_series), length(my_history))
-    len = 100
+
+    #limite_a_graficar = min(length(nathan_series), length(my_history))
+    limite_a_graficar = 100 # si no pongo nada lo hace con el anterior
     err = (norm(nathan_series[1:len] - my_history[1:len]) / norm(nathan_series[1:len])) * 100
     
-    p = plot(nathan_series[1:len], label="Nathan (Ref)", color=:black, lw=2)
-    plot!(p, my_history[1:len], label="Tu Simulación", color=:red, ls=:dash, lw=2)
-    title!("Validación Bit 1 (Error: $(round(err, digits=2))%)")
-    
-    savefig("validacion_final_arreglada.png")
+    # 2. LLAMAR A LA FUNCIÓN DE VISUALIZACIÓN
+    # Esta función se encarga de:
+    #   - Crear la etiqueta correcta (ej: "IZZII") usando BIT_PARA_CARGAR
+    #   - Poner los títulos y leyendas
+    #   - Guardar automáticamente en la carpeta Outputs
+    p = plot_validation_comparison(
+        nathan_series,       # Datos de referencia
+        my_history,          # Tus datos simulación
+        BIT_PARA_CARGAR,     # Índices para construir el nombre (ej: [1,2])
+        params["N_qubits"],  # N total para rellenar con 'I' el resto
+        err,               # El error calculado
+        limite_a_graficar                 # Longitud a graficar
+    )
     display(p)
 end
 

@@ -7,7 +7,7 @@ using FileIO
 # --- CARGAR DEPENDENCIAS ---
 include("src/utils/qrc_training.jl")       
 include("src/visualization/plot_stm_capacity.jl") 
-include("src/utils/data_loader.jl") 
+include("src/loaders/data_loader.jl") 
 
 function run_data_driven_stm()
     println("=== STM CAPACITY (Datos de Nathan) ===")
