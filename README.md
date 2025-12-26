@@ -270,3 +270,7 @@ $$\mathbf{W}_{out} = \mathbf{Y}_{target} \mathbf{X}^T (\mathbf{X} \mathbf{X}^T +
 4.  **Readout:** Calculate average $v_k$ from the ensemble to generate the output.
 5.  **Repeat:** Proceed to $s_{k+1}$ without resetting the system.
 
+
+
+
+# En qubits diferentes commutan X,Z e Y

@@ -14,46 +14,6 @@ end
 Versión Corregida: Maneja correctamente el caso donde no hay Identidad explícita.
 """
 
-
-# ==============================================================================
-# src/utils/quantum_channels.jl
-# Canales cuánticos (ruido, decoherencia)
-# ==============================================================================
-
-"""
-    apply_global_dephasing(rho::Operator, g::Float64)
-
-Aplica un canal de dephasing global basado en la fórmula exponencial:
-M[P] = (e^(-g^2 / 2))^χ(P) * P
-Donde χ(P) es el número de operadores que anticonmutan con el eje del ruido (Y y Z).
-"""
-function apply_global_dephasing(rho::Operator, g::Float64)
-    new_rho = Operator()
-    
-    # Factor de decaimiento base según la nueva fórmula (image_0.png)
-    # decay_base = exp(-g^2 / 2)
-    decay_base = exp(-(g^2) / 2.0) # antes teniamos esto (1.0 - 2.0 * g)
-    
-    tol = 1e-15
-
-    for (p, coeff) in rho
-        # Contamos cuántos Y o Z hay (son los que tienen bit z_mask activo)
-        # Esto equivale a χ(P) en las notas si el ruido es en X.
-        n_non_commuting = count_ones(p.z_mask)
-        
-        # El decaimiento total es la base elevada al número de no-conmutaciones
-        total_decay = decay_base ^ n_non_commuting
-        
-        new_coeff = coeff * total_decay
-        
-        if abs(new_coeff) > tol
-            new_rho[p] = new_coeff
-        end
-    end
-    return new_rho
-end
-
-
 # ==============================================================================
 #  FUNCIONES DE INYECCIÓN DE ESTADOS (Reset & Write)
 # ==============================================================================

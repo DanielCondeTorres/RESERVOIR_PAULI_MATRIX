@@ -13,7 +13,6 @@ function build_paper_basis(n_qubits::Int)
         [PauliString(0, (1<<i)|(1<<(i+1))) for i in 0:(n_qubits-2)] # Z_i Z_{i+1}
     )
 end
-
 """
     measure_observable(rho, P; projective=false) -> (val, rho_new)
 Mide un observable P.
@@ -23,11 +22,9 @@ Mide un observable P.
 function measure_observable(rho::Operator, P::PauliString; projective::Bool=false)
     # 1. Valor esperado ⟨P⟩ = Tr(P ρ)
     expectation = real(get(rho, P, 0.0im))
-    
     if !projective
         return expectation, rho
     end
-
     # 2. Lógica Proyectiva (Colapso)
     prob_plus = clamp((1.0 + expectation) / 2.0, 0.0, 1.0)
     outcome = rand() < prob_plus ? 1.0 : -1.0

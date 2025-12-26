@@ -2,24 +2,20 @@
 # src/utils/state_prep.jl
 # Preparación de estados iniciales
 # ==============================================================================
-
-"""
-    initial_state_all_zeros(n_qubits::Int)
-
-Devuelve el estado puro |000...0> (todos los qubits en |0>) en la base de Pauli.
-Un término Pauli P tiene coeficiente (1/2)^N si P solo contiene I y Z.
-En representación binaria, esto significa que x_mask debe ser 0.
-"""
 function initial_state_all_zeros(n_qubits::Int)
     rho = Operator()
     
-    # Coeficiente de normalización para N qubits
+    # Coeficiente c_k = Tr(rho P) / 2^N. 
+    # Para <Z>=1, el coeficiente es 1/2^N.
     norm_coeff = (1.0 / 2.0)^n_qubits + 0.0im
     
-    # Iteramos sobre todas las posibles combinaciones de I y Z
-    # Esto corresponde a iterar z_mask desde 0 hasta 2^N - 1, manteniendo x_mask en 0.
-    for z_mask_val in 0:(1 << n_qubits - 1)
-        p = PauliString(0, z_mask_val) # x_mask es siempre 0
+    # --- CORRECCIÓN AQUÍ: PARÉNTESIS AÑADIDOS ---
+    # Antes: 1 << n_qubits - 1  -> Julia hacía 1 << (6-1) = 32 (MAL)
+    # Ahora: (1 << n_qubits) - 1 -> Julia hace 64 - 1 = 63 (BIEN)
+    limit = (1 << n_qubits) - 1
+    
+    for z_mask_val in 0:limit
+        p = PauliString(0, z_mask_val)
         rho[p] = norm_coeff
     end
     
@@ -49,3 +45,5 @@ function initial_state_x_first(n_qubits::Int)
     
     return rho
 end
+
+
