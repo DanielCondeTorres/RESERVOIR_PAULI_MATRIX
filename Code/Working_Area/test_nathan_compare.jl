@@ -82,7 +82,7 @@ function run_final_validation()
 
     #limite_a_graficar = min(length(nathan_series), length(my_history))
     limite_a_graficar = 100 # si no pongo nada lo hace con el anterior
-    err = (norm(nathan_series[1:len] - my_history[1:len]) / norm(nathan_series[1:len])) * 100
+    err = (norm(nathan_series[1:limite_a_graficar] - my_history[1:limite_a_graficar]) / norm(nathan_series[1:limite_a_graficar])) * 100
     
     # 2. LLAMAR A LA FUNCIÓN DE VISUALIZACIÓN
     # Esta función se encarga de:
