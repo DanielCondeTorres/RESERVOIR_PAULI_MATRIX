@@ -15,7 +15,7 @@ include("src/utils/shot_noise.jl")
 include("src/operator_terms/hamiltonian.jl") 
 include("src/utils/measurements.jl")
 include("src/loaders/data_loader.jl") 
-include("src/visualization/plotting_comparission_vs_nathan.jl") 
+include("src/visualization/plotting_time_series_vs_expectation_value.jl") 
 # ==============================================================================
 # 2. CONFIGURACIÓN DE ÍNDICES (CRÍTICO)
 # ==============================================================================
@@ -24,9 +24,8 @@ N_SUBSTEPS = 100
 # Queremos el Bit 1 (el segundo qubit):
 BIT_PARA_CARGAR  = [1]  # Para extract_nathan_data -> Posición 2 ("1Z1...") 
 PAULI_MATRIX = "Z"
-DEPHASING_PAULI_MATRIX = "Z"  # Para canal de dephasing global
+DEPHASING_PAULI_MATRIX = "X"  # Para canal de dephasing global
 NOISE_SHOTS = 1.5e6
-
 # ==============================================================================
 # 3. EJECUCIÓN
 # ==============================================================================
@@ -37,14 +36,14 @@ function run_final_validation()
     params = extract_metadata(INPUT_FILE)
     # Usamos BIT_PARA_CARGAR [1] para encontrar la clave "1Z1111"
     nathan_series = extract_nathan_data(INPUT_FILE, PAULI_MATRIX, BIT_PARA_CARGAR)
-    
+    println("⚠️ VALOR DE G CARGADO: $(params["g"])")
     if isnothing(nathan_series)
         error("❌ No se encontró el qubit en el archivo. Revisa BIT_PARA_CARGAR.")
     end
 
     # B. Preparar Simulación
     # NOTA: Si esto falla, intenta cambiar a hamiltonian_nathan_XX
-    H_evol = hamiltonian_nathan_ZZ(params["N_qubits"], params["J"], params["h"])
+    H_evol = hamiltonian_nathan_XX(params["N_qubits"], params["J"], params["h"])
     rho = initial_state_all_zeros(params["N_qubits"])
     
     # El observable para medir en la simulación (Bit 1)
@@ -82,7 +81,7 @@ function run_final_validation()
 
 
         # Sino es donde la puse antes... ddedjamos las dos MEDICION
-        rho = apply_global_dephasing(rho, params["g"],DEPHASING_PAULI_MATRIX) 
+        rho = apply_global_dephasing(rho, params["g"], DEPHASING_PAULI_MATRIX) 
         
         
         if k % 100 == 0; print("\r   ⏳ Paso $k / $(params["num_steps"]) ..."); end

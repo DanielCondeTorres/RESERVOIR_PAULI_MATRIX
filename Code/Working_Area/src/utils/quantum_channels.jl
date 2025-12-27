@@ -12,46 +12,47 @@ Fórmula: coeff_new = coeff * exp(-g²/2)^n_anticonmuta
 """
 function apply_global_dephasing(rho::Operator, g::Float64, axis::String)
     new_rho = Operator()
-    
-    # Factor de decaimiento base (Eq. 15 del paper)
     decay_base = exp(-(g^2) / 2.0)
-    
-    # Normalizamos el input a mayúsculas para evitar errores
     axis_norm = uppercase(axis)
     
-    # Pre-chequeo de seguridad
-    if axis_norm ∉ ["X", "Y", "Z"]
-        error("❌ Eje de dephasing desconocido: '$axis'. Usa 'X', 'Y' o 'Z'.")
-    end
+    # --- VARIABLES DE DEBUG ---
+    total_terms = 0
+    killed_terms = 0
+    # --------------------------
 
     for (p, coeff) in rho
-        # Filtrado de términos nulos por eficiencia
         if abs(coeff) < 1e-15; continue; end
+        total_terms += 1
         
         n_anti = 0
         
         if axis_norm == "Z"
-            # Anticonmuta con Z si tiene componente X (es decir, es X o Y)
+            # Si medimos Z, mueren los que tienen X (X e Y)
             n_anti = count_ones(p.x_mask)
             
         elseif axis_norm == "X"
-            # Anticonmuta con X si tiene componente Z (es decir, es Z o Y)
+            # Si medimos X, mueren los que tienen Z (Z e Y)
             n_anti = count_ones(p.z_mask)
             
         elseif axis_norm == "Y"
-            # Anticonmuta con Y si es X o Z puros.
-            # Y (1,1) conmuta. I (0,0) conmuta.
-            # X (1,0) y Z (0,1) anticonmutan -> Usamos XOR (⊻)
             n_anti = count_ones(p.x_mask ⊻ p.z_mask)
         end
         
-        # Aplicamos el decaimiento
         if n_anti > 0
             new_rho[p] = coeff * (decay_base ^ n_anti)
+            killed_terms += 1
         else
             new_rho[p] = coeff
         end
     end
+
+    # --- IMPRIMIR DEBUG ---
+    # Esto imprimirá en cada paso qué está pasando.
+    # Si ves que los números cambian al cambiar axis="X" a "Z", ¡funciona!
+    if total_terms > 0
+        println("🔎 DEBUG Dephasing [$axis_norm]: De $total_terms términos, se amortiguaron $killed_terms")
+    end
+    # ----------------------
     
     return new_rho
 end
