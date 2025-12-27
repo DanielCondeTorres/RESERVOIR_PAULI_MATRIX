@@ -22,9 +22,9 @@ include("src/visualization/plotting_comparission_vs_nathan.jl")
 INPUT_FILE = "6_3_2_all_zeros_12345.jld2" 
 N_SUBSTEPS = 100       
 # Queremos el Bit 1 (el segundo qubit):
-BIT_PARA_CARGAR  = [1,3]  # Para extract_nathan_data -> Posición 2 ("1Z1...") 
+BIT_PARA_CARGAR  = [1]  # Para extract_nathan_data -> Posición 2 ("1Z1...") 
 PAULI_MATRIX = "Z"
-DEPHASING_PAULI_MATRIX = "X"  # Para canal de dephasing global
+DEPHASING_PAULI_MATRIX = "Z"  # Para canal de dephasing global
 NOISE_SHOTS = 1.5e6
 
 # ==============================================================================
@@ -33,7 +33,6 @@ NOISE_SHOTS = 1.5e6
 BIT_PARA_SIMULAR = BIT_PARA_CARGAR .+ 1
 function run_final_validation()
     println("🚀 Iniciando Validación Final...")
-
     # A. Cargar Metadatos y Datos de Referencia
     params = extract_metadata(INPUT_FILE)
     # Usamos BIT_PARA_CARGAR [1] para encontrar la clave "1Z1111"
@@ -68,22 +67,31 @@ function run_final_validation()
             truncate_operator!(rho, 2000)
         end
         
-        # Dephasing
-        rho = apply_global_dephasing(rho, params["g"],DEPHASING_PAULI_MATRIX) 
+        # Dephasing esto igual tengo que ponerlo al final es el backaction
+        # rho = apply_global_dephasing(rho, params["g"],DEPHASING_PAULI_MATRIX) 
+        
         # Medición: Obtener coeficiente y aplicar escala después del ruido
-        # como en tu versión que "daba bien".
-        coeff = real(get(rho, observable_unico, 0.0im))# REVISAR MEDICION
+        #coeff = real(get(rho, observable_unico, 0.0im))# CON ESTE VA BIEN!!!
+        coeff, _ = measure_observable(rho, observable_unico, projective=false)
 
 
 
         my_history[k] = apply_shot_noise(coeff, NOISE_SHOTS) * scale_factor
+
+
+
+
+        # Sino es donde la puse antes... ddedjamos las dos MEDICION
+        rho = apply_global_dephasing(rho, params["g"],DEPHASING_PAULI_MATRIX) 
+        
+        
         if k % 100 == 0; print("\r   ⏳ Paso $k / $(params["num_steps"]) ..."); end
     end
     # D. Graficar
     println("\n✅ Finalizado.")
 
     #limite_a_graficar = min(length(nathan_series), length(my_history))
-    limite_a_graficar = 100 # si no pongo nada lo hace con el anterior
+    limite_a_graficar = 200 # si no pongo nada lo hace con el anterior
     err = (norm(nathan_series[1:limite_a_graficar] - my_history[1:limite_a_graficar]) / norm(nathan_series[1:limite_a_graficar])) * 100
     
     # 2. LLAMAR A LA FUNCIÓN DE VISUALIZACIÓN
