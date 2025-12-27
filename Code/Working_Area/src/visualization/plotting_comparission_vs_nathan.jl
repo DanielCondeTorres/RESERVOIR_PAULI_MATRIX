@@ -6,12 +6,13 @@ using Plots
 Genera y guarda una gráfica en la carpeta 'Outputs' del proyecto.
 """
 function plot_validation_comparison(nathan_data::Vector{Float64}, 
-                                    my_data::Vector{Float64}, 
-                                    target_qubits::Vector{Int}, 
-                                    n_qubits::Int, 
-                                    err_percent::Float64,
-                                    obs_char::Char,
-                                    limites::Int)
+    my_data::Vector{Float64}, 
+    target_qubits::Vector{Int}, 
+    n_qubits::Int, 
+    err_percent::Float64,
+    obs_char::Char,      # 6º Argumento
+    limites::Int)
+
     
     # 1. Construir la etiqueta dinámica (Ej: "IZZII")
     label_chars = fill('I', n_qubits)

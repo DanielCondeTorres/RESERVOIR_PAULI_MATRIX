@@ -90,12 +90,13 @@ function run_final_validation()
     #   - Poner los títulos y leyendas
     #   - Guardar automáticamente en la carpeta Outputs
     p = plot_validation_comparison(
-        nathan_series,       # Datos de referencia
-        my_history,          # Tus datos simulación
-        BIT_PARA_CARGAR,     # Índices para construir el nombre (ej: [1,2])
-        params["N_qubits"],  # N total para rellenar con 'I' el resto
-        err,               # El error calculado
-        limite_a_graficar                 # Longitud a graficar
+        nathan_series,       # 1. Datos ref
+        my_history,          # 2. Datos sim
+        BIT_PARA_CARGAR,     # 3. Índices (ej: [1,2])
+        params["N_qubits"],  # 4. Total qubits
+        err,                 # 5. Error %
+        PAULI_MATRIX,                 # 6. Carácter (Char)
+        limite_a_graficar    # 7. Límite (Int)
     )
     display(p)
 end
