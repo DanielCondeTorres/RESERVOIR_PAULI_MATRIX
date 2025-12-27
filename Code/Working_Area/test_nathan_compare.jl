@@ -22,7 +22,7 @@ include("src/visualization/plotting_time_series_vs_expectation_value.jl")
 INPUT_FILE = "6_3_2_all_zeros_12345.jld2" 
 N_SUBSTEPS = 100       
 # Queremos el Bit 1 (el segundo qubit):
-BIT_PARA_CARGAR  = [1]  # Para extract_nathan_data -> Posición 2 ("1Z1...") 
+BIT_PARA_CARGAR  = [1,3]  # Para extract_nathan_data -> Posición 2 ("1Z1...") 
 PAULI_MATRIX = "Z"
 DEPHASING_PAULI_MATRIX = "X"  # Para canal de dephasing global
 NOISE_SHOTS = 1.5e6
@@ -34,6 +34,20 @@ function run_final_validation()
     println("🚀 Iniciando Validación Final...")
     # A. Cargar Metadatos y Datos de Referencia
     params = extract_metadata(INPUT_FILE)
+    
+    # Graficamos el Input
+    plot_universal(
+    params["s_vec"],              # 1. Los datos (Input Signal)
+    200,                          # 2. Límite del eje X (pinta los primeros 200 pasos)
+    "Time Steps",                 # 3. Nombre Eje X
+    "Injection Value",            # 4. Nombre Eje Y
+    "Input Signal s_k",           # 5. Etiqueta para la leyenda
+    "input_signal_scatter.png";   # 6. Nombre del archivo de salida
+    # --- Argumentos Opcionales ---
+    style = :scatter,             # <--- ¡AQUÍ ESTÁ LA CLAVE! Puntos en vez de línea
+    use_qubit_logic = false       # Apagamos la lógica "IZXII" porque es el input global
+    )
+
     # Usamos BIT_PARA_CARGAR [1] para encontrar la clave "1Z1111"
     nathan_series = extract_nathan_data(INPUT_FILE, PAULI_MATRIX, BIT_PARA_CARGAR)
     println("⚠️ VALOR DE G CARGADO: $(params["g"])")
@@ -108,6 +122,7 @@ function run_final_validation()
         limite_a_graficar    # 7. Límite (Int)
     )
     display(p)
+
 end
 
 run_final_validation()
