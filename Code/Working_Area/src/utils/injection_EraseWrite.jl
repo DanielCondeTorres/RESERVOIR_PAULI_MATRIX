@@ -42,7 +42,10 @@ Uso típico (Reservoir Computing):
 Uso avanzado (Ruido o Control):
     inject_state(rho, 1, u, rx=0.1) -> Inyecta u en Z y 0.1 en X.
 """
-function inject_state(rho::Operator, qubit_idx::Int, rz::Float64; rx::Float64=0.0, ry::Float64=0.0)
+
+
+
+function inject_state_EraseWrite(rho::Operator, qubit_idx::Int, rz::Float64; rx::Float64=0.0, ry::Float64=0.0)
     new_rho = Operator()
     bit_loc = 1 << qubit_idx
     tol = 1e-15

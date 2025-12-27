@@ -8,7 +8,7 @@ using FileIO
 # ==============================================================================
 include("src/operator_terms/pauli_algebra.jl")      
 include("src/utils/dynamics.jl")
-include("src/utils/injection.jl")
+include("src/utils/injection_EraseWrite.jl")
 include("src/utils/initial_state.jl") 
 include("src/utils/quantum_channels.jl") 
 include("src/utils/shot_noise.jl") 
@@ -22,9 +22,11 @@ include("src/visualization/plotting_comparission_vs_nathan.jl")
 INPUT_FILE = "6_3_2_all_zeros_12345.jld2" 
 N_SUBSTEPS = 100       
 # Queremos el Bit 1 (el segundo qubit):
-BIT_PARA_CARGAR  = [1]  # Para extract_nathan_data -> Posición 2 ("1Z1...") 
+BIT_PARA_CARGAR  = [1,3]  # Para extract_nathan_data -> Posición 2 ("1Z1...") 
 PAULI_MATRIX = "Z"
+DEPHASING_PAULI_MATRIX = "X"  # Para canal de dephasing global
 NOISE_SHOTS = 1.5e6
+
 # ==============================================================================
 # 3. EJECUCIÓN
 # ==============================================================================
@@ -59,7 +61,7 @@ function run_final_validation()
         s_k = params["s_vec"][k]
         rz = 1.0 - 2.0 * s_k
         rx = 2.0 * sqrt(s_k * (1.0 - s_k))
-        rho = inject_state(rho, 0, rz, rx=rx) 
+        rho = inject_state_EraseWrite(rho, 0, rz, rx=rx) 
         # Evolution
         for _ in 1:N_SUBSTEPS
             rho = step_rk4(rho, H_evol, dt_small)
@@ -67,7 +69,7 @@ function run_final_validation()
         end
         
         # Dephasing
-        rho = apply_global_dephasingX(rho, params["g"]) 
+        rho = apply_global_dephasing(rho, params["g"],DEPHASING_PAULI_MATRIX) 
         # Medición: Obtener coeficiente y aplicar escala después del ruido
         # como en tu versión que "daba bien".
         coeff = real(get(rho, observable_unico, 0.0im))# REVISAR MEDICION
