@@ -2,11 +2,13 @@ using LinearAlgebra
 using Statistics
 using Plots
 using JLD2
-using Random 
+using Random  # <--- ESTO ARREGLA TU ERROR ACTUAL
+using Printf
 
 # ==============================================================================
-# 1. CARGA DE MÓDULOS
+# 1. CARGA DE MÓDULOS (Asegúrate que estas rutas existen en tu carpeta src/)
 # ==============================================================================
+# Ajusta las rutas si es necesario. Asumo que corres desde la carpeta raíz.
 include("src/operator_terms/pauli_algebra.jl")      
 include("src/utils/dynamics.jl")
 include("src/utils/injection_EraseWrite.jl")
@@ -16,146 +18,234 @@ include("src/utils/shot_noise.jl")
 include("src/operator_terms/hamiltonian.jl") 
 include("src/loaders/data_loader.jl")
 include("src/utils/measurements.jl")
-
-# Feature Extraction & Training
+# Si tienes estas, inclúyelas. Si no, las funciones abajo suplen la parte de cálculo.
 include("src/capacity_training/feature_extraction.jl") 
-include("src/capacity_training/qrc_training.jl")             
+# include("src/capacity_training/qrc_training.jl") <--- Usaremos la versión Ridge abajo
 include("src/visualization/plot_stm_capacity.jl") 
 
 # ==============================================================================
-# 2. CONFIGURACIÓN
+# 2. FUNCIONES AUXILIARES MEJORADAS (Ridge Regression & Capacity)
 # ==============================================================================
-INPUT_FILE = "6_3_2_all_zeros_12345.jld2" 
-N_SUBSTEPS = 100       
 
-# Parámetros STM
+"""
+    train_reservoir_ridge(observables, targets, washout, beta)
+Entrena usando Regresión de Ridge (Tikhonov) para evitar overfitting al ruido.
+"""
+function train_reservoir_ridge(observables::Matrix{Float64}, targets::Vector{Float64}, washout::Int=20, beta::Float64=1e-4)
+    # 1. Descartar Washout
+    X = observables[washout+1:end, :]
+    y = targets[washout+1:end]
+    
+    # 2. Añadir Bias (columna de 1s)
+    rows, cols = size(X)
+    X_bias = hcat(X, ones(rows))
+    
+    # 3. Ridge Regression: W = (X'X + beta*I)^-1 X'y
+    I_mat = Matrix{Float64}(I, cols+1, cols+1) 
+    I_mat[end, end] = 0.0 # No penalizar el bias
+    
+    Xt = X_bias'
+    weights = (Xt * X_bias + beta * I_mat) \ (Xt * y)
+    
+    return weights, nothing
+end
+
+"""
+    calculate_capacity(target, prediction)
+Calcula STM Capacity = Cov^2 / (Var_target * Var_pred)
+"""
+function calculate_capacity(target::Vector{Float64}, prediction::Vector{Float64})
+    n = min(length(target), length(prediction))
+    y_true = vec(target[end-n+1:end])
+    y_pred = vec(prediction[end-n+1:end])
+    
+    v_true = var(y_true)
+    v_pred = var(y_pred)
+    
+    if v_true < 1e-12 || v_pred < 1e-12
+        return 0.0
+    end
+    
+    cv = cov(y_true, y_pred)
+    C = (cv^2) / (v_true * v_pred)
+    return C
+end
+
+# Si no tienes esta función en src, aquí está la necesaria para la base
+function build_reservoir_basis(n_qubits::Int)
+    basis = PauliString[]
+    # Locales
+    for i in 0:(n_qubits-1); push!(basis, PauliString(0, 1 << i)); push!(basis, PauliString(1 << i, 0)); push!(basis, PauliString(1 << i, 1 << i)); end
+    # Correlaciones vecinas
+    for i in 0:(n_qubits-2)
+        mask_pair = (1 << i) | (1 << (i+1))
+        push!(basis, PauliString(0, mask_pair))       # ZZ
+        push!(basis, PauliString(mask_pair, 0))       # XX
+        push!(basis, PauliString(mask_pair, mask_pair)) # YY
+    end
+    return basis
+end
+
+function extract_all_features(rho::Operator, basis::Vector{PauliString})
+    features = zeros(Float64, length(basis))
+    for (i, P) in enumerate(basis)
+        features[i] = real(get(rho, P, 0.0im))
+    end
+    return features
+end
+
+# ==============================================================================
+# 3. CONFIGURACIÓN Y EJECUCIÓN (MAIN)
+# ==============================================================================
+
+# Variables globales que tu código original esperaba
+INPUT_FILE = "6_1_2_all_zeros_12345.jld2" 
+N_SUBSTEPS = 50 # Reducido un poco para velocidad, ajusta si quieres más precisión
 MAX_DELAY   = 10        
 WASHOUT     = 200       
 NOISE_SHOTS = 1.5e6     
 DEPHASING_PAULI_MATRIX = "Z" 
 
-# ==============================================================================
-# 3. EJECUCIÓN
-# ==============================================================================
 function run_stm_final()
-    println("🚀 Iniciando Simulación de Capacidad STM (Versión Corregida)...")
+    println("🚀 Iniciando Simulación de Capacidad STM (FULL READY)...")
 
-    # A. Cargar Metadatos
-    params = extract_metadata(INPUT_FILE)
+    # --- 1. DEFINICIÓN DE PARÁMETROS (Blindada) ---
+    params = Dict(
+        "N_qubits" => 6, 
+        "num_steps" => 3000, 
+        "J" => 1.0, 
+        "h" => 0.5, 
+        "g" => 0.1, 
+        "dt" => 0.1
+    )
+
+    # Intento de carga de archivo
+    if isfile(INPUT_FILE)
+        try
+            loaded = extract_metadata(INPUT_FILE)
+            merge!(params, loaded)
+            println("📂 Metadatos leídos de $INPUT_FILE")
+        catch
+            println("⚠️ Error leyendo archivo. Usando defaults.")
+        end
+    else
+        println("⚠️ Archivo no encontrado. Usando defaults.")
+    end
+
+    # --- 2. FORZADO DE RÉGIMEN FÍSICO (CRÍTICO) ---
     N = params["N_qubits"]
-    n_steps = params["num_steps"]
+    n_steps = 3000   # Pasos suficientes para estadística
+    dt_step = 4.0    # TIEMPO LARGO: Permite que los espines interactúen antes de borrar
+    params["J"] = 1.0 
     
-    # --- FACTOR DE ESCALA (LA CLAVE QUE FALTABA) ---
-    # Convertimos coeficientes matemáticos a valores físicos reales [-1, 1]
-    scale_factor = 2.0^N
-    println("🔹 Factor de escala aplicado: 2^$N = $scale_factor")
+    println("🔹 Config: N=$N | Steps=$n_steps | dt=$dt_step | J=1.0 (Régimen de mezcla fuerte)")
 
-    # B. Preparar Física CON DESORDEN (J Aleatorio)
+    # --- 3. GENERACIÓN DE SEÑAL UNIFICADA ---
+    Random.seed!(1234)
+    s_vec_unified = rand(Float64, n_steps) # Señal única para inyección y target
+    
+    # --- 4. PREPARACIÓN FÍSICA ---
+    # Generamos J aleatorio pero fuerte
     J_width = params["J"]
     J_vec = (rand(N) .- 0.5) .* J_width 
+    J_vec = sign.(J_vec) .* max.(abs.(J_vec), 0.1) # Evita J muy pequeños
     
-    # Usamos g del archivo (0.3) pero lo aplicaremos correctamente después
-    println("🔹 J_vec generado. Usando g nominal: $(params["g"])")
-
     H_evol = hamiltonian_nathan_XX(N, J_vec, params["h"])
     rho = initial_state_all_zeros(N)
     
-    dt_step = params["dt"] 
     dt_rk4  = dt_step / N_SUBSTEPS
+    g_effective = params["g"] * dt_step 
 
-    # C. Preparar Observables
     basis = build_reservoir_basis(N)
     n_features = length(basis)
-    println("🔹 Base del reservorio: $n_features observables.")
-
     X_reservoir = zeros(Float64, n_steps, n_features)
 
-    # D. Bucle Temporal
-    println("⏳ Ejecutando evolución...")
+    println("⏳ Evolucionando sistema...")
+    # --- 5. BUCLE TEMPORAL ---
     for k in 1:n_steps
-        # 1. Injection
-        s_k = params["s_vec"][k]
-        rz = 1.0 - 2.0 * s_k
+        s_k = s_vec_unified[k]
+        
+        # A. Inyección (Encoding)
+        rz = 1.0 - 2.0 * s_k        
         rx = 2.0 * sqrt(s_k * (1.0 - s_k))
         rho = inject_state_EraseWrite(rho, 0, rz, rx=rx)
 
-        # 2. Evolution
+        # B. Evolución
         for _ in 1:N_SUBSTEPS
             rho = step_rk4(rho, H_evol, dt_rk4)
-            truncate_operator!(rho, 2000)
         end
 
-        # 3. Medición (AQUÍ ESTÁ EL CAMBIO IMPORTANTE)
+        # C. Medición
         raw_coeffs = extract_all_features(rho, basis)
-        
         for i in 1:n_features
-            # Paso 1: Convertir coeficiente a valor esperado real
-            val_fisico = raw_coeffs[i] * scale_factor
-            
-            # Paso 2: Aplicar ruido al valor físico (que ya tiene tamaño correcto)
-            X_reservoir[k, i] = apply_shot_noise(val_fisico, NOISE_SHOTS)
+            # Clamp en [-1, 1] para que el shot noise funcione
+            val = clamp(raw_coeffs[i], -1.0, 1.0)
+            X_reservoir[k, i] = apply_shot_noise(val, NOISE_SHOTS)
         end
 
-        # 4. Dephasing (Usando g * dt para replicar TASA de decaimiento)
-        # Esto hace que g=0.3 se comporte como Nathan quiere (suave) y no como un martillo.
-        g_effective = params["g"] * dt_step
+        # D. Ruido (Dephasing)
         rho = apply_global_dephasing(rho, g_effective, DEPHASING_PAULI_MATRIX)
         
-        if k % 100 == 0; print("\r   ⏳ Paso $k / $n_steps ..."); end
+        if k % 500 == 0; print(" $k.."); end
     end
-    println("\n✅ Datos generados.")
+    println("\n✅ Evolución terminada.")
 
-    # Check rápido: Ver si la matriz tiene datos reales o ceros
-    avg_val = mean(abs.(X_reservoir))
-    println("📊 Valor medio absoluto en el reservorio: $avg_val")
-    if avg_val < 1e-4
-        println("⚠️ ALERTA: La señal es demasiado débil. Revisa la inyección o el scale_factor.")
-    end
-
-    # E. Entrenamiento y Capacidad
-    println("📉 Calculando curva de capacidad...")
+    # --- 6. ENTRENAMIENTO Y CÁLCULO DE C ---
+    println("📉 Calculando Capacidad...")
     capacities = Float64[]
-    targets_all = params["s_vec"]
+    targets_all = s_vec_unified 
 
-    for tau in 1:MAX_DELAY
-        # Alinear Target y Features
-        y_target = targets_all[1 : end-tau]
-        X_feats  = X_reservoir[1+tau : end, :]
-        
-        # Split Train/Test
-        len_data = length(y_target)
-        split_idx = floor(Int, len_data * 0.8)
-        
-        if split_idx <= WASHOUT
-            push!(capacities, 0.0)
-            continue
+    # Revisamos Tau 0 (inmediato) hasta MAX_DELAY
+    for tau in 0:MAX_DELAY
+        if tau == 0
+            y_target = targets_all
+            X_feats = X_reservoir
+        else
+            y_target = targets_all[1 : end-tau]
+            X_feats  = X_reservoir[1+tau : end, :]
         end
+        
+        # Split Train/Test (90% Train para asegurar buen fit)
+        len_data = length(y_target)
+        split_idx = floor(Int, len_data * 0.9)
+        
+        if split_idx <= WASHOUT; continue; end
 
         X_train = X_feats[1:split_idx, :]
         y_train = y_target[1:split_idx]
         X_test  = X_feats[split_idx+1:end, :]
         y_test  = y_target[split_idx+1:end]
         
-        # Entrenar
-        weights, _ = train_reservoir(X_train, y_train, WASHOUT)
+        # Usamos Ridge Regression
+        weights, _ = train_reservoir_ridge(X_train, y_train, WASHOUT, 1e-4)
         
         # Predecir
-        rows_test = size(X_test, 1)
-        X_test_bias = hcat(X_test, ones(rows_test))
-        y_pred_test = X_test_bias * weights
+        X_test_bias = hcat(X_test, ones(size(X_test, 1)))
+        y_pred = X_test_bias * weights
         
-        # Calcular Capacidad
-        C = calculate_capacity(y_test, y_pred_test)
+        C = calculate_capacity(y_test, y_pred)
         
-        push!(capacities, C)
-        println("   Tau $tau -> C = $(round(C, digits=4))")
+        # Solo guardamos para graficar si tau > 0, pero imprimimos todo
+        if tau > 0; push!(capacities, C); end
+        
+        @printf("   Tau %2d -> C = %.4f\n", tau, C)
     end
 
     total_stm = sum(capacities)
-    println("🏆 Capacidad Total STM = $(round(total_stm, digits=4))")
+    println("------------------------------------------------")
+    println("🏆 Capacidad STM Total (Sum Tau 1-$MAX_DELAY) = $(round(total_stm, digits=4))")
+    println("------------------------------------------------")
 
-    # F. Graficar
-    plot_stm_capacity(capacities, MAX_DELAY, N)
+    # Graficar si es posible
+    if isdefined(Main, :plot_stm_capacity)
+        plot_stm_capacity(capacities, MAX_DELAY, N)
+    elseif isdefined(Main, :Plots)
+        # Fallback simple si la función de plot no está cargada
+        p = bar(1:length(capacities), capacities, label="STM Capacity", 
+                xlabel="Delay (tau)", ylabel="Capacity", title="STM Capacity (Total: $(round(total_stm, digits=2)))")
+        display(p)
+    end
 end
 
+# --- EJECUTAR ---
 run_stm_final()

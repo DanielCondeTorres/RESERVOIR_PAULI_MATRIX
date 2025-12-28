@@ -22,9 +22,9 @@ include("src/visualization/plotting_time_series_vs_expectation_value.jl")
 INPUT_FILE = "6_3_2_all_zeros_12345.jld2" 
 N_SUBSTEPS = 100       
 # Queremos el Bit 1 (el segundo qubit):
-BIT_PARA_CARGAR  = [1,3]  # Para extract_nathan_data -> Posición 2 ("1Z1...") 
+BIT_PARA_CARGAR  = [1]  # Para extract_nathan_data -> Posición 2 ("1Z1...") 
 PAULI_MATRIX = "Z"
-DEPHASING_PAULI_MATRIX = "X"  # Para canal de dephasing global
+DEPHASING_PAULI_MATRIX = "Z"  # Para canal de dephasing global
 NOISE_SHOTS = 1.5e6
 # ==============================================================================
 # 3. EJECUCIÓN
@@ -57,7 +57,7 @@ function run_final_validation()
 
     # B. Preparar Simulación
     # NOTA: Si esto falla, intenta cambiar a hamiltonian_nathan_XX
-    H_evol = hamiltonian_nathan_XX(params["N_qubits"], params["J"], params["h"])
+    H_evol = hamiltonian_nathan_ZZ(params["N_qubits"], params["J"], params["h"])
     rho = initial_state_all_zeros(params["N_qubits"])
     
     # El observable para medir en la simulación (Bit 1)
@@ -118,7 +118,7 @@ function run_final_validation()
         BIT_PARA_CARGAR,     # 3. Índices (ej: [1,2])
         params["N_qubits"],  # 4. Total qubits
         err,                 # 5. Error %
-        PAULI_MATRIX,                 # 6. Carácter (Char)
+        PAULI_MATRIX,        # 6. Carácter (Char)
         limite_a_graficar    # 7. Límite (Int)
     )
     display(p)

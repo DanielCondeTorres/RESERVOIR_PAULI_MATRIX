@@ -1,10 +1,10 @@
 using LinearAlgebra
 using Statistics
 using Plots
-using Random # Necesario para generar inputs aleatorios
+using Random 
 
 # ==============================================================================
-# 1. CARGA DE MÓDULOS (Tus funciones)
+# 1. CARGA DE MÓDULOS
 # ==============================================================================
 include("src/operator_terms/pauli_algebra.jl")      
 include("src/utils/dynamics.jl")
@@ -14,159 +14,148 @@ include("src/utils/quantum_channels.jl")
 include("src/utils/shot_noise.jl") 
 include("src/operator_terms/hamiltonian.jl") 
 include("src/utils/measurements.jl")
-# Feature Extraction (Base del reservorio)
 
-# --- Extracción de Características (Tu archivo actualizado) ---
+# Feature Extraction
 include("src/capacity_training/feature_extraction.jl") 
 
-# --- Análisis y Visualización (Tus archivos existentes) ---
+# Training & Plotting
 include("src/capacity_training/qrc_training.jl")    
 include("src/visualization/plot_stm_capacity.jl") 
-# --------------------------------------------------------------------------
-# A. PARÁMETROS DE ENTRADA (¡MODIFICA ESTO A TU GUSTO!)
-# --------------------------------------------------------------------------
-# 1. Dimensiones y Tiempo
-N_QUBITS    = 6             # Tamaño del sistema
-NUM_STEPS   = 1000          # Pasos de tiempo totales
-DT          = 0.01          # Tamaño del paso temporal
-N_SUBSTEPS  = 100           # Precisión RK4 (substeps por paso)
-# 2. Física del Hamiltoniano (Paper: Disordered XX Model)
-J_SCALE     = 1.0           # Escala de acoplamiento J
-H_FIELD     = 10.0          # Campo magnético transversal h
-# 3. Dinámica del Reservorio
-G_DEPHASING = 0.05          # Fuerza del ruido (Backaction). 0.05 es ideal.
-PAULI_BASIS = "Z"           # Base de dephasing y medición principal
-# 4. Realismo Experimental
-NOISE_SHOTS = 1.5e6         # Ruido de disparo (infinito = sin ruido)
-# 5. Análisis de Memoria
-MAX_DELAY   = 10            # Tau máximo a calcular
-WASHOUT     = 200           # Pasos iniciales a descartar
 
+# 🔴 NUEVO: Incluimos tu función de graficar expectación
+include("src/visualization/expectation_xj_vs_step.jl") 
 
 # ==============================================================================
-# 2. SCRIPT PRINCIPAL (AUTÓNOMO)
+# 2. PARÁMETROS DE ENTRADA
+# ==============================================================================
+N_QUBITS    = 6             
+NUM_STEPS   = 1000 #       
+DT          = 0.01          
+N_SUBSTEPS  = 100           
+J_SCALE     = 1.0           
+H_FIELD     = 10.0          
+G_DEPHASING = 0.05          
+PAULI_BASIS = "Z"           
+NOISE_SHOTS = 1.5e6         
+MAX_DELAY   = 10            
+WASHOUT     = 200           
+
+# ==============================================================================
+# 3. SCRIPT PRINCIPAL
 # ==============================================================================
 function run_simulation_from_scratch()
-    println("🚀 INICIANDO SIMULACIÓN QRC (Modo Manual/Generativo)...")
-    # --------------------------------------------------------------------------
-    # B. GENERACIÓN DE DATOS ALEATORIOS (INPUT SIGNAL)
-    # --------------------------------------------------------------------------
-    println("🎲 Generando señal de entrada aleatoria...")
-    # Generamos un vector de 0s y 1s aleatorios
+    println("🚀 INICIANDO SIMULACIÓN COMPLETA (STM + Expectation Plot)...")
+
+    # A. Generar Datos Aleatorios
     s_vec = rand([0.0, 1.0], NUM_STEPS)
 
-    # --------------------------------------------------------------------------
-    # C. PREPARACIÓN DE LA FÍSICA
-    # --------------------------------------------------------------------------
-    println("⚙️ Configurando sistema cuántico...")
-    
-    # 1. Construir Hamiltoniano XX
-    #    Como no cargamos archivo, asumimos que la función genera el desorden internamente
-    #    o usa J uniforme. 
+    # B. Preparar Física
+    # Generar desorden J en [-0.5, 0.5] * J_SCALE
     Jvec = (rand(N_QUBITS) .- 0.5) .* J_SCALE
     H_evol = hamiltonian_nathan_XX(N_QUBITS, Jvec, H_FIELD)
     
-    # 2. Estado Inicial |00...0>
     rho = initial_state_all_zeros(N_QUBITS)
-    
-    # 3. Paso de integración pequeño
     dt_small = DT / N_SUBSTEPS
+    scale_factor = 2.0^N_QUBITS # 🔴 IMPORTANTE: Factor 2^N
 
-    # 4. Construir Base del Reservorio (Neuronas)
+    # C. Preparar Reservorio
     basis = build_reservoir_basis(N_QUBITS)
     n_features = length(basis)
-    println("   -> Reservorio con $N_QUBITS qubits y $n_features observables.")
-
-    # Matriz para guardar la historia [Tiempo x Neuronas]
+    
+    # Matriz para STM (Features)
     X_reservoir = zeros(Float64, NUM_STEPS, n_features)
 
-    # --------------------------------------------------------------------------
+    # 🔴 NUEVO: Matriz para guardar la evolución de <X_j>
+    # Dimensiones: [Pasos x Qubits] -> [1000 x 6]
+    X_magnetization_data = zeros(Float64, NUM_STEPS, N_QUBITS)
+
     # D. BUCLE DE SIMULACIÓN
-    # --------------------------------------------------------------------------
-    println("⏳ Ejecutando evolución temporal ($NUM_STEPS pasos)...")
+    println("⏳ Ejecutando evolución ($NUM_STEPS pasos)...")
     
     for k in 1:NUM_STEPS
-        # 1. INYECCIÓN (Input en Qubit 0)
+        # 1. Inyección
         s_k = s_vec[k]
         rz = 1.0 - 2.0 * s_k
         rx = 2.0 * sqrt(s_k * (1.0 - s_k))
         rho = inject_state_EraseWrite(rho, 0, rz, rx=rx)
 
-        # 2. EVOLUCIÓN (RK4)
+        # 2. Evolución
         for _ in 1:N_SUBSTEPS
             rho = step_rk4(rho, H_evol, dt_small)
-            truncate_operator!(rho, 2000) # Limpieza numérica
+            truncate_operator!(rho, 2000)
         end
 
-        # 3. MEDICIÓN (Extraer Features)
+        # 3. Medición (Features y Expectation)
         feats_vals = extract_all_features(rho, basis)
         
-        # Añadir ruido de disparo y guardar
+        # --- Guardar Features para STM (con ruido y escala) ---
         for i in 1:n_features
-            X_reservoir[k, i] = apply_shot_noise(feats_vals[i], NOISE_SHOTS)
+            val_fisico = feats_vals[i] * scale_factor
+            X_reservoir[k, i] = apply_shot_noise(val_fisico, NOISE_SHOTS)
         end
 
-        # 4. BACKACTION (Dephasing Global)
-        rho = apply_global_dephasing(rho, G_DEPHASING, PAULI_BASIS)
-        
-        # Progreso visual
-        if k % 100 == 0
-            print("\r   -> Progreso: $(round(k/NUM_STEPS*100, digits=1))%")
+        # 🔴 NUEVO: Guardar datos específicos de <X_j> para la gráfica
+        # Sabemos que en 'basis', primero van los Z (N), luego los X (N).
+        # Por tanto, los X están en los índices [N+1] hasta [2N].
+        offset_X = N_QUBITS 
+        for qubit_idx in 1:N_QUBITS
+            # Extraemos el valor de la base correspondiente a X_j
+            raw_val = feats_vals[offset_X + qubit_idx] 
+            
+            # Escalamos a valor físico real
+            phys_val = raw_val * scale_factor
+            
+            # Guardamos en la matriz de magnetización
+            X_magnetization_data[k, qubit_idx] = phys_val
         end
+
+        # 4. Backaction (g * dt)
+        g_effective = G_DEPHASING * DT
+        rho = apply_global_dephasing(rho, g_effective, PAULI_BASIS)
+        
+        if k % 100 == 0; print("\r   -> Progreso: $(round(k/NUM_STEPS*100, digits=1))%"); end
     end
     println("\n✅ Simulación completada.")
 
     # --------------------------------------------------------------------------
-    # E. ENTRENAMIENTO Y CÁLCULO DE CAPACIDAD
+    # E. GRAFICAR EVOLUCIÓN DE EXPECTACIÓN (LO QUE PEDISTE)
     # --------------------------------------------------------------------------
-    println("📉 Entrenando Pesos y Calculando STM...")
+    # Llamamos a tu función pasando: Eje X, Matriz de Datos X_j, Num Qubits
+    plot_expectation_evolution(1:NUM_STEPS, X_magnetization_data, N_QUBITS)
+    
+    # --------------------------------------------------------------------------
+    # F. CALCULAR Y GRAFICAR CAPACIDAD STM
+    # --------------------------------------------------------------------------
+    println("📉 Calculando STM Capacity...")
     capacities = Float64[]
 
     for tau in 1:MAX_DELAY
-        # 1. Definir Target (Lo que pasó hace tau pasos)
+        # (Lógica estándar de capacidad...)
         y_target = s_vec[1 : end-tau]
-        
-        # 2. Definir Features (El estado actual del reservorio)
         X_feats  = X_reservoir[1+tau : end, :]
-        
-        # 3. Separar Train / Test (80% / 20%)
         len_data = length(y_target)
         split_idx = floor(Int, len_data * 0.8)
         
-        if split_idx <= WASHOUT
-            push!(capacities, 0.0)
-            continue
-        end
+        if split_idx <= WASHOUT; push!(capacities, 0.0); continue; end
 
         X_train = X_feats[1:split_idx, :]
         y_train = y_target[1:split_idx]
         X_test  = X_feats[split_idx+1:end, :]
         y_test  = y_target[split_idx+1:end]
         
-        # 4. Entrenar (Regresión Lineal - Ridge/Least Squares)
         weights, _ = train_reservoir(X_train, y_train, WASHOUT)
-        
-        # 5. Predecir (Test)
         rows_test = size(X_test, 1)
-        X_test_bias = hcat(X_test, ones(rows_test)) # Bias manual
+        X_test_bias = hcat(X_test, ones(rows_test))
         y_pred_test = X_test_bias * weights
         
-        # 6. Calcular Capacidad
         C = calculate_capacity(y_test, y_pred_test)
-        
         push!(capacities, C)
         println("   Tau $tau -> C = $(round(C, digits=4))")
     end
-
+    
     total_stm = sum(capacities)
     println("🏆 Capacidad Total STM = $(round(total_stm, digits=4))")
-
-    # --------------------------------------------------------------------------
-    # F. GUARDAR RESULTADOS
-    # --------------------------------------------------------------------------
     plot_stm_capacity(capacities, MAX_DELAY, N_QUBITS)
-    println("💾 Gráfica guardada en la carpeta Outputs.")
 end
 
-# Ejecutar script
 run_simulation_from_scratch()
