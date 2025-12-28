@@ -70,30 +70,6 @@ function calculate_capacity(target::Vector{Float64}, prediction::Vector{Float64}
     C = (cv^2) / (v_true * v_pred)
     return C
 end
-
-# Si no tienes esta función en src, aquí está la necesaria para la base
-function build_reservoir_basis(n_qubits::Int)
-    basis = PauliString[]
-    # Locales
-    for i in 0:(n_qubits-1); push!(basis, PauliString(0, 1 << i)); push!(basis, PauliString(1 << i, 0)); push!(basis, PauliString(1 << i, 1 << i)); end
-    # Correlaciones vecinas
-    for i in 0:(n_qubits-2)
-        mask_pair = (1 << i) | (1 << (i+1))
-        push!(basis, PauliString(0, mask_pair))       # ZZ
-        push!(basis, PauliString(mask_pair, 0))       # XX
-        push!(basis, PauliString(mask_pair, mask_pair)) # YY
-    end
-    return basis
-end
-
-function extract_all_features(rho::Operator, basis::Vector{PauliString})
-    features = zeros(Float64, length(basis))
-    for (i, P) in enumerate(basis)
-        features[i] = real(get(rho, P, 0.0im))
-    end
-    return features
-end
-
 # ==============================================================================
 # 3. CONFIGURACIÓN Y EJECUCIÓN (MAIN)
 # ==============================================================================
@@ -135,8 +111,8 @@ function run_stm_final()
     # --- 2. FORZADO DE RÉGIMEN FÍSICO (CRÍTICO) ---
     N = params["N_qubits"]
     n_steps = 3000   # Pasos suficientes para estadística
-    dt_step = 4.0    # TIEMPO LARGO: Permite que los espines interactúen antes de borrar
-    params["J"] = 1.0 
+    dt_step = params["dt"] #4.0    # TIEMPO LARGO: Permite que los espines interactúen antes de borrar
+    #params["J"] = 1.0 
     
     println("🔹 Config: N=$N | Steps=$n_steps | dt=$dt_step | J=1.0 (Régimen de mezcla fuerte)")
 
@@ -149,8 +125,8 @@ function run_stm_final()
     J_width = params["J"]
     J_vec = (rand(N) .- 0.5) .* J_width 
     J_vec = sign.(J_vec) .* max.(abs.(J_vec), 0.1) # Evita J muy pequeños
-    
     H_evol = hamiltonian_nathan_XX(N, J_vec, params["h"])
+    
     rho = initial_state_all_zeros(N)
     
     dt_rk4  = dt_step / N_SUBSTEPS
@@ -217,7 +193,7 @@ function run_stm_final()
         y_test  = y_target[split_idx+1:end]
         
         # Usamos Ridge Regression
-        weights, _ = train_reservoir_ridge(X_train, y_train, WASHOUT, 1e-4)
+        weights, _ = train_reservoir(X_train, y_train, WASHOUT)
         
         # Predecir
         X_test_bias = hcat(X_test, ones(size(X_test, 1)))
