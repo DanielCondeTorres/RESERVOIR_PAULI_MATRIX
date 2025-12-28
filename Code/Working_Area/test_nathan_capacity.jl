@@ -23,56 +23,7 @@ include("src/capacity_training/feature_extraction.jl")
 # include("src/capacity_training/qrc_training.jl") <--- Usaremos la versión Ridge abajo
 include("src/visualization/plot_stm_capacity.jl") 
 
-# ==============================================================================
-# 2. FUNCIONES AUXILIARES MEJORADAS (Ridge Regression & Capacity)
-# ==============================================================================
 
-"""
-    train_reservoir_ridge(observables, targets, washout, beta)
-Entrena usando Regresión de Ridge (Tikhonov) para evitar overfitting al ruido.
-"""
-function train_reservoir_ridge(observables::Matrix{Float64}, targets::Vector{Float64}, washout::Int=20, beta::Float64=1e-4)
-    # 1. Descartar Washout
-    X = observables[washout+1:end, :]
-    y = targets[washout+1:end]
-    
-    # 2. Añadir Bias (columna de 1s)
-    rows, cols = size(X)
-    X_bias = hcat(X, ones(rows))
-    
-    # 3. Ridge Regression: W = (X'X + beta*I)^-1 X'y
-    I_mat = Matrix{Float64}(I, cols+1, cols+1) 
-    I_mat[end, end] = 0.0 # No penalizar el bias
-    
-    Xt = X_bias'
-    weights = (Xt * X_bias + beta * I_mat) \ (Xt * y)
-    
-    return weights, nothing
-end
-
-"""
-    calculate_capacity(target, prediction)
-Calcula STM Capacity = Cov^2 / (Var_target * Var_pred)
-"""
-function calculate_capacity(target::Vector{Float64}, prediction::Vector{Float64})
-    n = min(length(target), length(prediction))
-    y_true = vec(target[end-n+1:end])
-    y_pred = vec(prediction[end-n+1:end])
-    
-    v_true = var(y_true)
-    v_pred = var(y_pred)
-    
-    if v_true < 1e-12 || v_pred < 1e-12
-        return 0.0
-    end
-    
-    cv = cov(y_true, y_pred)
-    C = (cv^2) / (v_true * v_pred)
-    return C
-end
-# ==============================================================================
-# 3. CONFIGURACIÓN Y EJECUCIÓN (MAIN)
-# ==============================================================================
 
 # Variables globales que tu código original esperaba
 INPUT_FILE = "6_1_2_all_zeros_12345.jld2" 
@@ -111,7 +62,7 @@ function run_stm_final()
     # --- 2. FORZADO DE RÉGIMEN FÍSICO (CRÍTICO) ---
     N = params["N_qubits"]
     n_steps = 3000   # Pasos suficientes para estadística
-    dt_step = params["dt"] #4.0    # TIEMPO LARGO: Permite que los espines interactúen antes de borrar
+    dt_step = 4.0    # TIEMPO LARGO: Permite que los espines interactúen antes de borrar
     #params["J"] = 1.0 
     
     println("🔹 Config: N=$N | Steps=$n_steps | dt=$dt_step | J=1.0 (Régimen de mezcla fuerte)")
