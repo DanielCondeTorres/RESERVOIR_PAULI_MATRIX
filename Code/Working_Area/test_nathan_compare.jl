@@ -31,7 +31,7 @@ BIT_PARA_CARGAR  = [1]
 # - Qubit 1 solo: INDICES_MEDICION = [1], PAULI_MATRIX = "Z"
 # - Qubit 2 solo: INDICES_MEDICION = [2], PAULI_MATRIX = "Z"
 # - Correlación:  INDICES_MEDICION = [1, 2], PAULI_MATRIX = "ZZ"
-INDICES_MEDICION = [1] 
+INDICES_MEDICION = [2] 
 PAULI_MATRIX     = "Z"    
 
 DEPHASING_PAULI_MATRIX = "Z"
@@ -74,7 +74,7 @@ function run_final_validation()
     end
     # ==========================================================================
 
-    dt_small = params["dt"] 
+    dt_small = params["dt"] / N_SUBSTEPS # DIVIDIR??
     max_terms = 4^params["N_qubits"]
     println("   Truncado: $max_terms (Full)")
 
@@ -92,7 +92,7 @@ function run_final_validation()
         # 2. EVOLUCIÓN
         for _ in 1:N_SUBSTEPS
             rho = step_rk4(rho, H_evol, dt_small)
-            truncate_operator!(rho, 4100) # ¡IMPORTANTE: 4100!
+            truncate_operator!(rho, max_terms) # ¡IMPORTANTE: 4100!
         end
         
         # 3. DEPHASING
