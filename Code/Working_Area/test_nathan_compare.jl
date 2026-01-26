@@ -51,7 +51,7 @@ PAULI_MATRIX     = "Z"
 DEPHASING_PAULI_MATRIX = "Z"
 
 # Nombre del archivo de salida (se guardará donde ejecutes el script)
-OUTPUT_FILE = "resultado_simulacion_$(PAULI_MATRIX)_$(INDICES_MEDICION).jld2"
+OUTPUT_FILE = "~/Desktop/IBM_EXAMENES/TFM/RESERVOIR_PAULI_MATRIX/Code/archivos_comparar_nathan/resultado_simulacion_$(PAULI_MATRIX)_$(INDICES_MEDICION).jld2"
 
 # ==============================================================================
 # 3. EJECUCIÓN
