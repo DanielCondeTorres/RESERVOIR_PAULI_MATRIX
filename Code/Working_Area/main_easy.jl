@@ -19,6 +19,7 @@ include_rel("src/utils/initial_state.jl") # <--- Tu nueva función está aquí
 include_rel("src/utils/measurements.jl")
 include_rel("src/utils/dynamics.jl")
 include_rel("src/visualization/expectation_xj_vs_step.jl") 
+include_rel("src/operator_terms/pauli_algebra.jl")      
 
 # ==============================================================================
 # 2. PARÁMETROS
@@ -38,14 +39,12 @@ function dense_to_operator(rho_mat::Matrix{ComplexF64}, n_qubits::Int)
     for site in 0:(n_qubits-1)
         z_mask = 1 << site
         p = PauliString(0, z_mask)
-        
         # Construimos la matriz del Pauli P para proyectar
         P_mat = [1.0;;]
         for i in 0:(n_qubits-1)
             gate = (i == site) ? [1 0; 0 -1] : [1 0; 0 1]
             P_mat = kron(gate, P_mat)
-        end
-        
+        end 
         # Coeficiente en la expansión de Pauli: c_k = Tr(rho * P) / 2^N
         rho_op[p] = tr(rho_mat * P_mat) * scale
     end
@@ -68,19 +67,20 @@ function run_nathan_task()
     println("Create initial state |00...0> ...")
     rho_op = initial_state_all_zeros(N)
     rho = operator_to_dense_matrix(rho_op, N)
-   inputs = rand(0:1, steps)
+    inputs = rand(0:1, steps)
     history = zeros(Float64, steps, N)
 
     # Pre-calculamos los operadores de medida Z para ganar velocidad
-    println("⚙️ Pre-calculando operadores de medida...")
+    println("Pre-calculando operadores de medida...")
     Z_ops = []
-    for site in 0:(N-1)
-        Z_site = [1.0;;]
-        for i in 0:(N-1)
-            gate = (i == site) ? [1 0; 0 -1] : [1 0; 0 1]
-            Z_site = kron(gate, Z_site)
-        end
-        push!(Z_ops, Z_site)
+    for site in 1:(N)
+        # 1. Creamos el PauliString (Z en el sitio i)
+        # Usamos: create_pauli_observable("Z", [site])
+        p_string = create_pauli_observable("Z", [site])
+        # 2. Lo convertimos a un Operador (Diccionario)
+        op_z = Operator(p_string => 1.0 + 0.0im)
+        # 3. Lo convertimos a Matriz Densa para la simulación
+        push!(Z_ops, operator_to_dense_matrix(op_z, N))
     end
 
     # D. Bucle de Reservoir
@@ -96,21 +96,19 @@ function run_nathan_task()
         U_inj = Ry
         for i in 2:N; U_inj = kron([1 0; 0 1], U_inj); end
         
-        # Evolución de rho: rho = U_inj * rho * U_inj†
+        # EVOLVE THE STATE: rho = U_inj * rho * U_inj†
+
         rho = U_inj * rho * adjoint(U_inj)
         # 2. EVOLUCIÓN UNITARIA EXACTA: rho = U * rho * U†
-        #rho = U_evol * rho * U_evol_adj
-        # En lugar de una sola exponencial, iteramos n_substeps
-        
-        
+        rho = U_evol * rho * U_evol_adj
         #Rk4
-        n_substeps = 100     # <--- DEFINIDO: Pasos internos de integración
-        dt = T_evol / n_substeps # <--- DEFINIDO: Tamaño del paso temporal
-        for _ in 1:n_substeps
-            rho = step_rk4_matrix(rho, H_dense, dt)
-        end
+        #n_substeps = 100     # <--- DEFINIDO: Pasos internos de integración
+        #dt = T_evol / n_substeps # <--- DEFINIDO: Tamaño del paso temporal
+        #for _ in 1:n_substeps
+        #    rho = step_rk4_matrix(rho, H_dense, dt)
+        #end
         #Rk4
-        # 3. MEDICIÓN: <Z> = Tr(rho * Z)
+        # 3. MEASURE: <Z> = Tr(rho * Z)
         for site in 1:N
             history[k, site] = real(tr(rho * Z_ops[site]))
         end
