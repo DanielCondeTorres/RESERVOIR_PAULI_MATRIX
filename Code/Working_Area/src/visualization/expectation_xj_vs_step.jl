@@ -1,4 +1,33 @@
 using Plots
+function plot_expectation_evolution_easy(steps_vec, results_data, n_sites, inputs_vec=nothing)
+    println("Generando gráfico de Evolución de Expectación...")
+
+    # Etiquetas correctas (Vector fila 1xN)
+    labels = reshape(["Z$i" for i in 1:n_sites], 1, n_sites)
+
+    p = plot(steps_vec, results_data,
+        label = labels,
+        xlabel = "Step (k)",
+        ylabel = "Expectation <Z_j>",
+        title = "Evolution of Expectation Value",
+        lw = 1.5,
+        palette = :tab10,
+        legend = :outertopright,
+        grid = true,
+        # Ajustado a (-1.1, 1.1) porque <Z> puede ser negativo
+        ylim = (-1.1, 1.1) 
+    )
+    
+    # Si pasamos los inputs, los graficamos en el fondo
+    if !isnothing(inputs_vec)
+        plot!(p, steps_vec, inputs_vec, label="Input", color=:black, ls=:dash, alpha=0.2, seriestype=:steppre)
+    end
+
+    # Guardado robusto
+    output_path = joinpath(SCRIPT_DIR, "expectation_evolution.png")
+    savefig(p, output_path)
+    println("✅ Gráfico guardado en: $output_path")
+end
 
 """
     plot_expectation_evolution(steps_vec, results_data, n_sites)
@@ -51,3 +80,7 @@ function plot_expectation_evolution(steps_vec::AbstractVector, results_data::Mat
     println("✅ Gráfico guardado exitosamente en: $file_path")
     # display(p) # Descomenta si quieres verlo en pantalla al ejecutar
 end
+
+
+
+

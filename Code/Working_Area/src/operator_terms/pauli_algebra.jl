@@ -129,3 +129,33 @@ function create_pauli_observable(tipo_str::String, lista_qubits::Vector{Int})
     
     return PauliString(total_x, total_z)
 end
+
+
+
+
+
+function operator_to_dense_matrix(H_dict::Operator, n_qubits::Int)
+    dim = 2^n_qubits
+    H_mat = zeros(ComplexF64, dim, dim)
+    I2, X, Z, Y = [1 0; 0 1], [0 1; 1 0], [1 0; 0 -1], [0 -im; im 0]
+
+    for (pauli, coeff) in H_dict
+        # Empezamos con la matriz de identidad de 1x1
+        term_mat = ComplexF64[1.0;;] 
+        for k in 0:(n_qubits - 1)
+            x = (pauli.x_mask >> k) & 1
+            z = (pauli.z_mask >> k) & 1
+            
+            gate = I2
+            if x == 1 && z == 0; gate = X
+            elseif x == 0 && z == 1; gate = Z
+            elseif x == 1 && z == 1; gate = Y
+            end
+            
+            # kron(Qubits_posteriores, Qubits_anteriores)
+            term_mat = kron(gate, term_mat)
+        end
+        H_mat += coeff * term_mat
+    end
+    return H_mat
+end

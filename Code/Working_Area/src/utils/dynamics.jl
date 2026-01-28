@@ -41,3 +41,14 @@ function step_rk4(O::Operator, H::Operator, dt::Float64)
     O = add_ops(O, k4, dt/6.0 + 0.0im)
     return O
 end
+
+function step_rk4_matrix(rho::Matrix{ComplexF64}, H::Matrix{ComplexF64}, dt::Float64)
+    f(ρ) = -im * (H * ρ - ρ * H)
+    
+    k1 = f(rho)
+    k2 = f(rho + 0.5 * dt * k1)
+    k3 = f(rho + 0.5 * dt * k2)
+    k4 = f(rho + dt * k3)
+    
+    return rho + (dt / 6.0) * (k1 + 2*k2 + 2*k3 + k4)
+end

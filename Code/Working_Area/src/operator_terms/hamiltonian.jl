@@ -75,3 +75,50 @@ function hamiltonian_nathan_XX(n_qubits::Int, J_exactos::Vector{Float64}, h_exac
     
     return H
 end
+
+
+
+
+
+
+
+
+"""
+    build_nathan_all_to_all_XX(n_qubits::Int, h::Float64; seed::Int=12345) -> Operator
+
+Construye el Hamiltoniano de la Eq (32) versión All-to-All:
+H = - (h/2) ∑ Z_j + ∑_{i<j} J_{ij} X_i X_j
+
+# Parámetros
+- `n_qubits`: Número de sitios (ej. 6).
+- `h`: Intensidad del campo magnético.
+- `seed`: Para que los acoplamientos J_ij aleatorios sean siempre los mismos.
+"""
+function build_nathan_all_to_all_XX(n_qubits::Int, h::Float64; seed::Int=12345)
+    Random.seed!(seed)
+    H = Operator()
+
+    # 1. Término de Campo Transversal: -(h/2) * Z_j en cada sitio
+    # En tu máscara: PauliString(x_mask, z_mask)
+    for j in 0:(n_qubits - 1)
+        p_z = PauliString(0, 1 << j) # Z en el sitio j
+        H[p_z] = get(H, p_z, 0.0im) - (h / 2.0)
+    end
+
+    # 2. Término de Interacción All-to-All: J_ij * X_i * X_j
+    # Conectamos todos los pares posibles (i < j)
+    for i in 0:(n_qubits - 1)
+        for j in (i + 1):(n_qubits - 1)
+            # J_ij aleatorio entre -0.5 y 0.5 (como indica Nathan en sus notas)
+            J_ij = rand() - 0.5
+            
+            # X_i * X_j -> x_mask activo en bits i y j
+            p_xx = PauliString((1 << i) | (1 << j), 0)
+            
+            # Sumamos al operador (por si acaso ya existiera el término)
+            H[p_xx] = get(H, p_xx, 0.0im) + J_ij
+        end
+    end
+
+    return H
+end
