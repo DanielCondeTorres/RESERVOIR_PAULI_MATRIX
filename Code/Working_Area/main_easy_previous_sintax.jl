@@ -18,7 +18,7 @@ end
 N = 6
 steps = 100
 T_evol = 10.0
-h_val = 1.0
+h_val = 0.5
 Experiment_name = "../Nathan_Foundation_AllToAll_FullZ_Operators"
 
 # Parámetros para RK4
@@ -39,7 +39,7 @@ include_rel("src/utils/injection_EraseWrite.jl")
 # 3. SIMULACIÓN BASADA EN OPERADORES (RK4 + COEFICIENTES)
 # ==============================================================================
 function run_nathan_task()
-    println("🚀 Iniciando experimento (MODO OPERADORES): $Experiment_name")
+    println("Iniciando experimento (MODO OPERADORES): $Experiment_name")
     
     H_op = build_nathan_all_to_all_XX(N, h_val) 
     rho = initial_state_all_zeros(N) 
@@ -69,7 +69,9 @@ function run_nathan_task()
     all_labels = collect(keys(label_to_obj))
     expect_dict = Dict(lbl => zeros(Float64, steps) for lbl in all_labels)
 
-    println("🔄 Ejecutando pasos temporales con RK4...")
+
+
+    println(" Ejecutando pasos temporales con RK4...")
     for k in 1:steps
         s_k = Float64(inputs[k])
 
@@ -77,15 +79,23 @@ function run_nathan_task()
         rz = 1.0 - 2.0 * s_k
         rx = 2.0 * sqrt(s_k * (1.0 - s_k))
         rho = inject_state_EraseWrite(rho, 0, rz, rx=rx)
+        
+        
+        #MEDICION PREVIA
+        for label in all_labels
+            p_obj = label_to_obj[label] 
+            expect_dict[label][k] = real(get(rho, p_obj, 0.0))
+        end
+    # FIN MEDICION PREVIA
         # 2. EVOLUCIÓN
         for _ in 1:n_substeps
             rho = step_rk4(rho, H_op, dt)
         end
         # 3. MEDIDA CORREGIDA: Usamos el objeto ya traducido
-        for label in all_labels
-            p_obj = label_to_obj[label] 
-            expect_dict[label][k] = real(get(rho, p_obj, 0.0))
-        end
+        #for label in all_labels
+        #    p_obj = label_to_obj[label] 
+        #    expect_dict[label][k] = real(get(rho, p_obj, 0.0))
+        #end
         if k % 10 == 0; print("\rStep $k/$steps"); end
     end
 
@@ -98,10 +108,18 @@ function run_nathan_task()
         history_single_z[:, i] = expect_dict[z_labels[i]]
     end
 
-    println("\n📊 Generando gráfica...")
+    println("\n Generando gráfica...")
     plot_expectation_evolution_easy(1:steps, history_single_z, N, ruta_experimento, inputs)
     plot_zz_correlations(1:steps, expect_dict, ruta_experimento, inputs)
-    println("✅ ¡Listo!")
+    println(" ¡Listo!")
+
+        # 'history_single_z' es tu matriz de (steps, N)
+    heatmap(1:steps, 1:N, history_single_z', 
+    c=:viridis, 
+    xlabel="Step (k)", 
+    ylabel="Qubit Index",
+    title="Reservoir Dynamics: Nathan Foundation",
+    clabel="Expectation <Z>")
 end
 
 run_nathan_task()

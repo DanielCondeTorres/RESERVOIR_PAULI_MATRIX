@@ -60,8 +60,8 @@ end
 # 3. SIMULACIÓN EXACTA (RK4 + FULL MEASUREMENTS)
 # ==============================================================================
 function run_nathan_task()
-    println("🚀 Iniciando experimento: $Experiment_name")
-    println("⚙️ Configuración: N=$N, h=$h_val, steps=$steps")
+    println(" Iniciando experimento: $Experiment_name")
+    println("Configuración: N=$N, h=$h_val, steps=$steps")
 
     # A. Construir Hamiltoniano
     H_op = build_nathan_all_to_all_XX(N, h_val)
@@ -73,7 +73,7 @@ function run_nathan_task()
     U_evol_adj = adjoint(U_evol) # U† para la evolución de rho
 
     # B. Preparar Estado Inicial e Inputs
-    println("📦 Creando estado inicial |00...0>...")
+    println(" Creando estado inicial |00...0>...")
     rho_op = initial_state_all_zeros(N)
     rho = operator_to_dense_matrix(rho_op, N)
     
@@ -81,7 +81,7 @@ function run_nathan_task()
     inputs = rand(0:1, steps)
 
     # C. Pre-calcular TODOS los Observables (Z y ZZ)
-    println("⚙️ Pre-calculando observables Z_i y correlaciones Z_i Z_j...")
+    println(" Pre-calculando observables Z_i y correlaciones Z_i Z_j...")
     obs_matrices = Dict{String, Matrix{ComplexF64}}()
     
     # 1. Individuales: "Z11111", "1Z1111"...
@@ -105,7 +105,7 @@ function run_nathan_task()
     end
 
     # D. Bucle de Reservoir
-    println("🔄 Ejecutando pasos temporales con RK4...")
+    println(" Ejecutando pasos temporales con RK4...")
     for k in 1:steps
         s_k = Float64(inputs[k])
 
@@ -143,11 +143,11 @@ function run_nathan_task()
         history_single_z[:, i] = expect_dict[join(label)]
     end
 
-    println("\n📊 Generando gráfica...")
+    println("\n Generando gráfica...")
     # Llamamos a tu función de plot. Asegúrate de que use Experiment_name para el título/archivo
     plot_expectation_evolution_easy(1:steps, history_single_z, N, ruta_experimento, inputs)
     plot_zz_correlations(1:steps, expect_dict, ruta_experimento, inputs)
-    println("✅ ¡Listo! Experimento '$Experiment_name' finalizado.")
+    println("¡Listo! Experimento '$Experiment_name' finalizado.")
 end
 # --- AL FINAL DEL ARCHIVO ---
 run_nathan_task()

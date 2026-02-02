@@ -43,9 +43,33 @@ Uso avanzado (Ruido o Control):
     inject_state(rho, 1, u, rx=0.1) -> Inyecta u en Z y 0.1 en X.
 """
 
-
-
 function inject_state_EraseWrite(rho::Operator, qubit_idx::Int, rz::Float64; rx::Float64=0.0, ry::Float64=0.0)
+    new_rho = Operator()
+    bit_loc = 1 << qubit_idx
+    tol = 1e-15
+    has_x = abs(rx) > tol; has_y = abs(ry) > tol; has_z = abs(rz) > tol
+    found_global_identity = false
+    identity_mask = PauliString(0, 0)
+
+    for (p, coeff) in rho
+        if (p.x_mask >> qubit_idx) & 1 == 0 && (p.z_mask >> qubit_idx) & 1 == 0 # Check Pauli type 0 (Identity) manually
+            if p == identity_mask; found_global_identity = true; end
+            new_rho[p] = get(new_rho, p, 0.0im) + coeff
+            if has_z; p_z = PauliString(p.x_mask, p.z_mask | bit_loc); new_rho[p_z] = get(new_rho, p_z, 0.0im) + (coeff * rz); end
+            if has_x; p_x = PauliString(p.x_mask | bit_loc, p.z_mask); new_rho[p_x] = get(new_rho, p_x, 0.0im) + (coeff * rx); end
+            if has_y; p_y = PauliString(p.x_mask | bit_loc, p.z_mask | bit_loc); new_rho[p_y] = get(new_rho, p_y, 0.0im) + (coeff * ry); end
+        end
+    end
+    # Bloque de seguridad por si no había identidad
+    if !found_global_identity
+        if has_z; p_z = PauliString(0, bit_loc); new_rho[p_z] = get(new_rho, p_z, 0.0im) + rz; end
+        if has_x; p_x = PauliString(bit_loc, 0); new_rho[p_x] = get(new_rho, p_x, 0.0im) + rx; end
+        if has_y; p_y = PauliString(bit_loc, bit_loc); new_rho[p_y] = get(new_rho, p_y, 0.0im) + ry; end
+    end
+    return new_rho
+end
+
+function inject_state_EraseWrite2(rho::Operator, qubit_idx::Int, rz::Float64; rx::Float64=0.0, ry::Float64=0.0)
     new_rho = Operator()
     bit_loc = 1 << qubit_idx
     tol = 1e-15

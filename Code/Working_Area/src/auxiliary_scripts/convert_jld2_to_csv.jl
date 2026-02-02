@@ -4,11 +4,11 @@ using DataFrames
 
 # --- Configuración de Rutas ---
 # Usamos expanduser para que entienda el símbolo "~"
-archivo_entrada = expanduser("~/Desktop/IBM_EXAMENES/TFM/RESERVOIR_PAULI_MATRIX/Code/To_Nahan/resultado_INJ_DEPH_Z.jld2")
+archivo_entrada = expanduser("~/Desktop/IBM_EXAMENES/TFM/RESERVOIR_PAULI_MATRIX/Code/Nathan_Foundation_AllToAll_FullZ/nathan_foundation_6_steps100_full.jld2")
 #archivo_entrada = expanduser("~/Desktop/IBM_EXAMENES/TFM/RESERVOIR_PAULI_MATRIX/archivos_comparar_nathan/resultado_simulacion_Z.jld2")
 # Carpeta de salida (sin nombre de archivo, porque lo generaremos automático)
 #carpeta_salida  = expanduser("~/Desktop/IBM_EXAMENES/TFM/RESERVOIR_PAULI_MATRIX/Code/csv_transformation_dani_to_nathan/")
-carpeta_salida  = expanduser("~/Desktop/IBM_EXAMENES/TFM/RESERVOIR_PAULI_MATRIX/Code/csv_transformation_2/")
+carpeta_salida  = expanduser("~/Desktop/IBM_EXAMENES/TFM/RESERVOIR_PAULI_MATRIX/Code/Nathan_Foundation_AllToAll_FullZ/csv_transformation_2/")
 # Crear carpeta si no existe
 mkpath(carpeta_salida)
 
