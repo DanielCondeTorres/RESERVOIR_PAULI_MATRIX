@@ -159,3 +159,24 @@ function operator_to_dense_matrix(H_dict::Operator, n_qubits::Int)
     end
     return H_mat
 end
+
+
+
+function string_to_pauli(label::String)
+    x_mask = 0
+    z_mask = 0
+    # Recorremos el string: i es la posición, char es 'Z', 'X', 'Y' o '1'
+    for (i, char) in enumerate(label)
+        bit_pos = i - 1 # El primer qubit es el bit 0
+        if char == 'X'
+            x_mask |= (1 << bit_pos)
+        elseif char == 'Z'
+            z_mask |= (1 << bit_pos)
+        elseif char == 'Y'
+            x_mask |= (1 << bit_pos)
+            z_mask |= (1 << bit_pos)
+        end
+        # '1' o 'I' no activan ningún bit (son la identidad)
+    end
+    return PauliString(x_mask, z_mask)
+end
