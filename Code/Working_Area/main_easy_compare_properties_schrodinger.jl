@@ -26,6 +26,8 @@ try
     include_rel("src/metrics/separability_metrics.jl")
     include_rel("src/visualization/separability_plots.jl")
     include_rel("src/visualization/separability_and_Echo_property.jl")
+    include_rel("src/capacity_training/qrc_training.jl")
+    include_rel("src/capacity_training/calculate_stm_capacity.jl")
 catch e
     println("⚠️  Nota: Algunos módulos externos no cargaron. Usando funciones locales.")
 end
@@ -37,16 +39,22 @@ N = 6
 steps = 100
 T_evol = 1.0        
 h_val = 1.0
-gamma = 0.005       
+gamma = 0.04      
 n_substeps = 100
 dt = T_evol / n_substeps
-Experiment_name = "Schrodinger_Full_Tomography_XYZ_projective_true"
+Experiment_name = "Schrodinger_Full_Tomography_XYZ_projective_false"
 Experiment_path = joinpath(SCRIPT_DIR, "../$Experiment_name")
-projective_mode = true
-gamma_value = 0.5
+projective_mode = false
+gamma_value = 0.8
 if !isdir(Experiment_path); mkpath(Experiment_path); end
 
 
+
+
+# Parámetros para la Capacidad (Ajusta según necesites)
+WASHOUT = 2      # Pasos a ignorar al principio
+MAX_DELAY = 10     # Tau máximo a evaluar
+TRAIN_RATIO = 0.9  # 80% entrenamiento, 20% test
 # ==============================================================================
 # 4. SIMULACIÓN PRINCIPAL
 # ==============================================================================
@@ -172,6 +180,17 @@ function run_schrodinger_esp_task()
     println("\n✅ Experimento finalizado.")
     #SAVE
     save_qrc_results_jld2(N, steps, T_evol, h_val, inputs, dict_A, Experiment_name)
+
+    #CAPACITY
+# 1. Llamada a la nueva función externa
+    # Usamos dict_B (trayectoria principal) y WASHOUT definido arriba (ej: 50)
+    capacities, total_stm = calculate_stm_capacity(dict_B, inputs, MAX_DELAY, 50) # 10 es max_delay
+    
+    # 2. Guardar Gráfica
+    # Asegúrate de tener la función 'plot_memory_capacity' definida (la que te pasé antes)
+    plot_memory_capacity(capacities, MAX_DELAY, total_stm, Experiment_path)
+
+
 end
 
 # Ejecutar (asegúrate de que las funciones step_rk4 y demás están definidas antes)

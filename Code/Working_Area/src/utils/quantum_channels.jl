@@ -70,50 +70,70 @@ end
         # ==============================================================================
 # DEPHASING PARA MATRICES DENSAS (Schrödinger)
 # ==============================================================================
-function apply_global_dephasing_schrodinger(rho::Matrix{ComplexF64}, g::Float64, axis::String="Z")
-    # Si g es muy pequeño, no hacemos nada
+using LinearAlgebra
+
+"""
+    apply_global_dephasing_matrix(rho, g, axis)
+
+Aplica dephasing global en cualquier eje (X, Y, Z) sobre una matriz densa.
+Utiliza la lógica de decaimiento: coeff * exp(-g²/2)^n_diff
+"""
+function apply_global_dephasing_matrix(rho::Matrix{ComplexF64}, g::Float64, axis::String="Z")
     if g <= 1e-9; return rho; end
     
-    # Obtenemos dimensión y número de qubits
     dim = size(rho, 1)
-    # N no se pasa explícitamente, pero es log2(dim)
+    n_qubits = Int(log2(dim))
+    decay_factor = exp(-(g^2) / 2.0) # Usamos la misma constante que en tu código de Paulis
     
-    # Factor de decaimiento por qubit anticonmutando.
-    # Si usamos la lógica lineal: factor = exp(-g)
-    decay_factor = exp(-g)
+    # 1. ROTAR AL EJE DESEADO
+    # Para medir en X, rotamos la base con Hadamards. 
+    # Para medir en Y, rotamos con Rx(π/2).
+    rho_rotated = rotate_density_matrix(rho, axis, n_qubits, inverse=false)
     
-    # Copiamos para no mutar el original si no se desea
-    new_rho = copy(rho)
-    
-    # IMPLEMENTACIÓN OPTIMIZADA POR DISTANCIA DE HAMMING
-    # (Solo funciona nativamente para eje Z, que es lo que usas)
-    if uppercase(axis) == "Z"
-        for c in 1:dim
-            for r in 1:dim
-                if r == c; continue; end # La diagonal (poblaciones) no decae en dephasing Z
-                
-                # Truco binario:
-                # Los índices en Julia son 1-based, restamos 1 para tener bits (0...2^N-1)
-                val_r = r - 1
-                val_c = c - 1
-                
-                # XOR (⊻) nos dice en qué bits (qubits) difieren el estado fila y col
-                diff_bits = val_r ⊻ val_c
-                
-                # Contamos cuántos qubits son diferentes (Distancia Hamming)
-                n_diff = count_ones(diff_bits)
-                
-                # Aplicamos el castigo: decae una vez por cada qubit diferente
-                if n_diff > 0
-                    new_rho[r, c] *= (decay_factor ^ n_diff)
-                end
+    # 2. APLICAR DEPHASING (Lógica de Distancia de Hamming)
+    # En la base rotada, el dephasing siempre se ve como un "Z-dephasing"
+    new_rho = copy(rho_rotated)
+    for c in 1:dim
+        for r in 1:dim
+            if r == c; continue; end
+            
+            n_diff = count_ones((r-1) ⊻ (c-1)) # Distancia de Hamming
+            if n_diff > 0
+                new_rho[r, c] *= (decay_factor ^ n_diff)
             end
         end
-    else
-        # Fallback simple si quisieras X o Y (aunque no lo usas ahora)
-        # Sería rotar la base, aplicar Z, y desrotar.
-        println("⚠️ Aviso: apply_global_dephasing denso optimizado solo para Z.")
     end
     
-    return new_rho
+    # 3. VOLVER A LA BASE ORIGINAL
+    return rotate_density_matrix(new_rho, axis, n_qubits, inverse=true)
+end
+
+# --- FUNCIONES AUXILIARES DE ROTACIÓN ---
+
+function rotate_density_matrix(rho, axis, n_qubits, inverse=false)
+    axis_norm = uppercase(axis)
+    if axis_norm == "Z"
+        return rho # No hace falta rotar para Z
+    end
+    
+    # Definir el gate de rotación local
+    gate = if axis_norm == "X"
+        # Hadamard mueve Z -> X
+        1/sqrt(2) * [1.0 1.0; 1.0 -1.0]
+    elseif axis_norm == "Y"
+        # Rx(π/2) mueve Z -> Y
+        # U = exp(-i π/4 X)
+        1/sqrt(2) * [1.0 -1.0im; -1.0im 1.0]
+    end
+    
+    if inverse; gate = gate'; end
+    
+    # Construir el operador global U = g ⊗ g ⊗ g...
+    U_global = gate
+    for i in 2:n_qubits
+        U_global = kron(U_global, gate)
+    end
+    
+    # Aplicar transformación adjunta: U * rho * U'
+    return U_global * rho * U_global'
 end
