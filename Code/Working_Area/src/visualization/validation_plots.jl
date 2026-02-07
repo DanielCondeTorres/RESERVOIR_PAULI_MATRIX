@@ -82,7 +82,6 @@ function plot_and_save_validation_full(dict_A, dict_B, separation_dist, N, steps
         idx = findfirst('Z', lbl)
         p = plot(dict_A[lbl], label="Tray. A", c=:blue, lw=1.5, title="ESP: Qubit $idx")
         plot!(p, dict_B[lbl], label="Tray. B", c=:red, ls=:dash, lw=1.5)
-        ylims!(p, (-0.015, 0.015)) 
         savefig(p, joinpath(path_indiv, "ESP_Z$idx.png"))
     end
 

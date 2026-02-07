@@ -150,7 +150,7 @@ end
 
 
 function inject_state_EraseWrite_matrix(rho::Matrix{ComplexF64}, qubit_idx::Int, 
-    rz::Float64; rx::Float64=0.0, ry::Float64=0.0)
+    rz::Float64, rx::Float64=0.0, ry::Float64=0.0)
 dim = size(rho, 1)
 N_qubits = Int(log2(dim))
 

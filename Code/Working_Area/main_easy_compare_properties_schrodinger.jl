@@ -40,76 +40,14 @@ N = 6
 steps = 100
 T_evol = 1.0        # Tiempo de mezcla
 h_val = 1.0
-gamma = 0.05        # Dephasing ajustado para ESP
+gamma = 0.001        # Dephasing ajustado para ESP
+n_substeps = 100
+dt = T_evol / n_substeps
 Experiment_name = "Schrodinger_EraseWrite_Fixed_Full"
 Experiment_path = joinpath(SCRIPT_DIR, "../$Experiment_name")
 
 if !isdir(Experiment_path); mkpath(Experiment_path); end
 
-# ==============================================================================
-# 3. FUNCIONES AUXILIARES LOCALES (Salvavidas)
-# ==============================================================================
-
-# Generador Hamiltoniano Denso
-function build_hamiltonian_dense_local(N, h)
-    sx = [0 1; 1 0]; sz = [1 0; 0 -1]; id = [1 0; 0 1]
-    H = zeros(ComplexF64, 2^N, 2^N)
-    # Campo Z
-    for i in 1:N
-        op = (i==1) ? sz : id; for j in 2:N; op = kron(op, (j==i) ? sz : id); end
-        H .+= h * op
-    end
-    # XX interactions
-    Random.seed!(42)
-    J = randn(N,N) ./ sqrt(N-1)
-    for i in 1:N, j in (i+1):N
-        op = (i==1) ? sx : id; for k in 2:N; op = kron(op, (k==i || k==j) ? sx : id); end
-        H .+= J[i,j] * op
-    end
-    return H
-end
-
-# Dephasing Z Denso (Optimizado)
-function apply_dephasing_local(rho::Matrix{ComplexF64}, g::Float64)
-    if g <= 1e-9; return rho; end
-    dim = size(rho, 1)
-    decay = exp(-g)
-    new_rho = copy(rho)
-    for c in 1:dim
-        for r in 1:dim
-            if r == c; continue; end
-            # Hamming distance trick
-            n_diff = count_ones((r-1) ⊻ (c-1))
-            if n_diff > 0; new_rho[r,c] *= (decay^n_diff); end
-        end
-    end
-    return new_rho
-end
-
-# Inyección Erase & Write (Matriz)
-function inject_ew_local(rho::Matrix{ComplexF64}, qubit_idx::Int, rz::Float64, rx::Float64)
-    dim = size(rho, 1); Nq = Int(log2(dim))
-    I2 = [1.0+0im 0.0; 0.0 1.0]; P0 = [1.0+0im 0.0; 0.0 0.0]; Flip = [0.0+0im 1.0; 0.0 0.0]
-    
-    k = qubit_idx + 1
-    M0 = (k==1) ? P0 : I2; M1 = (k==1) ? Flip : I2
-    for i in 2:Nq
-        M0 = kron(M0, (i==k) ? P0 : I2)
-        M1 = kron(M1, (i==k) ? Flip : I2)
-    end
-    rho_reset = M0 * rho * M0' + M1 * rho * M1'
-    
-    # Rotación
-    norm = sqrt(rx^2 + rz^2)
-    if norm < 1e-9; return rho_reset; end
-    theta = acos(rz/norm) # Asumiendo ry=0
-    Ry = [cos(theta/2) -sin(theta/2); sin(theta/2) cos(theta/2)]
-    
-    U_op = (k==1) ? Ry : I2
-    for i in 2:Nq; U_op = kron(U_op, (i==k) ? Ry : I2); end
-    
-    return U_op * rho_reset * U_op'
-end
 
 # ==============================================================================
 # 4. SIMULACIÓN PRINCIPAL
@@ -118,16 +56,17 @@ function run_schrodinger_esp_task()
     println("🚀 Iniciando experimento: $Experiment_name")
     
     # A. Hamiltoniano
-    H_dense = build_hamiltonian_dense_local(N, h_val)
+    H_op = build_nathan_all_to_all_XX(N, h_val)
+    H_dense = operator_to_dense_matrix(H_op, N)
     U_evol = exp(-im * H_dense * T_evol)
     U_adj = U_evol'
 
     # B. Estados Iniciales
-    v0 = [1.0+0im; 0.0]; psi0 = v0; for i in 2:N; psi0 = kron(psi0, v0); end
-    rho_A = psi0 * psi0'
-    
-    v1 = [0.0+0im; 1.0]; psi1 = v1; for i in 2:N; psi1 = kron(psi1, v1); end
-    rho_B = psi1 * psi1'
+
+    rho_A = initial_state_all_zeros(N)
+    rho_B = initial_state_all_ones(N)
+    rho_A = operator_to_dense_matrix(rho_A, N)
+    rho_B = operator_to_dense_matrix(rho_B, N)
 
     Random.seed!(1234)
     inputs = rand(0:1, steps)
@@ -165,18 +104,21 @@ function run_schrodinger_esp_task()
         # Input 0: |0> (Norte, Z=1) | Input 1: |+> (Ecuador, Z=0)
         theta = (s_k == 0) ? 0.0 : pi/2.0
         rz = cos(theta); rx = sin(theta)
-
-        # 1. Inyección
-        rho_A = inject_ew_local(rho_A, 0, rz, rx)
-        rho_B = inject_ew_local(rho_B, 0, rz, rx)
+        # 1. Inyección 
+        rho_A = inject_state_EraseWrite_matrix(rho_A, 0, rz, rx,0.0)
+        rho_B = inject_state_EraseWrite_matrix(rho_B, 0, rz, rx,0.0)
 
         # 2. Evolución
-        rho_A = U_evol * rho_A * U_adj
-        rho_B = U_evol * rho_B * U_adj
-
+        #rho_A = U_evol * rho_A * U_adj
+        #rho_B = U_evol * rho_B * U_adj
+        # 2. EVOLUCIÓN CON RK4
+        for _ in 1:n_substeps
+            rho_A = step_rk4_matrix(rho_A, H_dense, dt)
+            rho_B = step_rk4_matrix(rho_B, H_dense, dt)
+        end
         # 3. Dephasing
-        rho_A = apply_dephasing_local(rho_A, gamma)
-        rho_B = apply_dephasing_local(rho_B, gamma)
+        rho_A = apply_global_dephasing_schrodinger(rho_A, gamma,"Z")
+        rho_B = apply_global_dephasing_schrodinger(rho_B, gamma,"Z")
 
         # 4. Medir
         dist_sq = 0.0
@@ -194,8 +136,8 @@ function run_schrodinger_esp_task()
 
     # E. Gráficas
     println("\n📊 Generando gráficas...")
-    plot_quick_validation_per_qubit(separation_dist, dict_A, inputs, N, Experiment_path)
-    plot_all_qubits_scatter(dict_A, inputs, N, Experiment_path)
+    plot_quick_validation_per_qubit(separation_dist, dict_B, inputs, N, Experiment_path)
+    plot_all_qubits_scatter(dict_B, inputs, N, Experiment_path)
     # 2. Plots Completos (Guardados en disco)
     println("💾 Guardando plots completos en: $Experiment_path")
     try

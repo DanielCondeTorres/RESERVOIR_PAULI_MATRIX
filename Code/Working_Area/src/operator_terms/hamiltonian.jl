@@ -110,7 +110,7 @@ function build_nathan_all_to_all_XX(n_qubits::Int, h::Float64; seed::Int=12345)
     for i in 0:(n_qubits - 1)
         for j in (i + 1):(n_qubits - 1)
             # J_ij aleatorio entre -0.5 y 0.5 (como indica Nathan en sus notas)
-            J_ij = rand() - 0.5
+            J_ij = (rand() - 0.5)   #*4
             
             # X_i * X_j -> x_mask activo en bits i y j
             p_xx = PauliString((1 << i) | (1 << j), 0)

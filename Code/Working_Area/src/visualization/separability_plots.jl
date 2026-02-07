@@ -275,14 +275,18 @@ Crea una cuadrícula de boxplots comparando la respuesta de cada qubit
 ante los dos posibles valores de entrada (0 y 1).
 """
 function plot_separability_boxplots(dict_A, inputs, N, save_dir; skip_steps=20)
-    println("📦 Generando Boxplots de separabilidad (saltando $skip_steps pasos)...")
+    println("📦 Generando Boxplots de separabilidad (ordenando correctamente)...")
 
-    z_labels = sort([l for l in keys(dict_A) if count(c -> c == 'Z', l) == 1])
+    # --- CAMBIO CRÍTICO AQUÍ ---
+    # Ordenamos por la posición del carácter 'Z' en el string
+    raw_labels = [l for l in keys(dict_A) if count(c -> c == 'Z', l) == 1]
+    z_labels = sort(raw_labels, by = x -> findfirst('Z', x))
+    # ---------------------------
+
     rows = Int(ceil(N/3))
     p = plot(layout=(rows, 3), size=(1000, 350*rows), title="Separability (after step $skip_steps)")
 
     for (i, lbl) in enumerate(z_labels)
-        # Filtramos para ignorar los primeros pasos (transitorios)
         valid_indices = (skip_steps+1):length(inputs)
         
         filtered_inputs = inputs[valid_indices]
@@ -294,10 +298,13 @@ function plot_separability_boxplots(dict_A, inputs, N, save_dir; skip_steps=20)
         x_labels = [fill("Input 0", length(data0)); fill("Input 1", length(data1))]
         y_values = [data0; data1]
 
+        # Usamos el índice i para que coincida con el orden de la Z
         boxplot!(p[i], x_labels, y_values, 
-                 title="Qubit $i", ylabel="<$lbl>", 
+                 title="Qubit $i ($lbl)", ylabel="Expectation", 
                  legend=false, color=[:blue :red], alpha=0.6)
     end
 
-    savefig(p, joinpath(save_dir, "Separability_Boxplots_Filtered.png"))
+    output_path = joinpath(save_dir, "Separability_Boxplots_Corrected.png")
+    savefig(p, output_path)
+    println("✅ Boxplots corregidos guardados en: $output_path")
 end
