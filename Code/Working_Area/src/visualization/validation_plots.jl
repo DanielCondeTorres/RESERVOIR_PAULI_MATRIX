@@ -64,48 +64,70 @@ end
 
 
 
-
 function plot_and_save_validation_full(dict_A, dict_B, separation_dist, N, steps, save_dir)
-    println("📊 Generando reporte detallado...")
-
-    # Crear carpetas para organizar
-    path_indiv = joinpath(save_dir, "Individual_Z")
-    path_pairs = joinpath(save_dir, "Correlations_ZZ")
-    mkpath(path_indiv); mkpath(path_pairs)
+    println("📊 Generando reporte detallado (Corrección de nombres X/Y)...")
 
     all_labels = collect(keys(dict_A))
-    z_labels = sort([l for l in all_labels if count(c -> c == 'Z', l) == 1])
-    zz_labels = sort([l for l in all_labels if count(c -> c == 'Z', l) == 2])
+    
+    # 1. Detectar qué base estamos usando (X, Y o Z)
+    # Buscamos en las etiquetas cuál de estas letras aparece
+    basis_char = 'Z' 
+    for char in ['X', 'Y', 'Z']
+        if any(k -> contains(k, string(char)), all_labels)
+            basis_char = char
+            break
+        end
+    end
+    b_str = string(basis_char)
 
-    # 1. Gráficas individuales ESP para cada qubit
+    # 2. Crear carpetas con nombres dinámicos
+    path_indiv = joinpath(save_dir, "Individual_$(b_str)")
+    path_pairs = joinpath(save_dir, "Correlations_$(b_str)$(b_str)")
+    mkpath(path_indiv); mkpath(path_pairs)
+
+    # 3. Filtrar etiquetas usando la base detectada
+    z_labels = sort([l for l in all_labels if count(c -> c == basis_char, l) == 1])
+    zz_labels = sort([l for l in all_labels if count(c -> c == basis_char, l) == 2])
+
+    # 4. Gráficas individuales (Ej: X1, X2...)
     for lbl in z_labels
-        idx = findfirst('Z', lbl)
-        p = plot(dict_A[lbl], label="Tray. A", c=:blue, lw=1.5, title="ESP: Qubit $idx")
+        idx = findfirst(basis_char, lbl)
+        # Título y nombre de archivo dinámico
+        p = plot(dict_A[lbl], label="Tray. A", c=:blue, lw=1.5, title="ESP: Qubit $idx ($b_str)")
         plot!(p, dict_B[lbl], label="Tray. B", c=:red, ls=:dash, lw=1.5)
-        savefig(p, joinpath(path_indiv, "ESP_Z$idx.png"))
+        savefig(p, joinpath(path_indiv, "ESP_$(b_str)$idx.png"))
     end
 
-    # 2. Gráficas para pares ZZ
+    # 5. Gráficas para pares (Ej: X4X5, X4X6...)
     for lbl in zz_labels
-        indices = [i for (i, c) in enumerate(lbl) if c == 'Z']
-        tag = "Z$(indices[1])Z$(indices[2])"
+        indices = [i for (i, c) in enumerate(lbl) if c == basis_char]
+        # AQUÍ ESTABA EL ERROR: Ahora usa b_str en lugar de "Z"
+        tag = "$(b_str)$(indices[1])$(b_str)$(indices[2])"
+        
         p = plot(dict_A[lbl], label="Tray. A", c=:blue, lw=1.5, title="ESP Pair: $tag")
         plot!(p, dict_B[lbl], label="Tray. B", c=:red, ls=:dash, lw=1.5)
-        #ylims!(p, (-0.015, 0.015)) 
         savefig(p, joinpath(path_pairs, "ESP_$tag.png"))
     end
 
-    # 3. Resumen combinado
-    p1 = plot(dict_A[zz_labels[1]], label="Tray. A", c=:blue, title="ESP Sample (ZZ)")
-    plot!(p1, dict_B[zz_labels[1]], label="Tray. B", c=:red, ls=:dash)
+    # 6. Resumen combinado
+    # Tomamos el primer par de la lista para el ejemplo
+    if !isempty(zz_labels)
+        p1 = plot(dict_A[zz_labels[1]], label="Tray. A", c=:blue, title="ESP Sample ($(zz_labels[1]))")
+        plot!(p1, dict_B[zz_labels[1]], label="Tray. B", c=:red, ls=:dash)
+    else
+        p1 = plot(title="No pairs found")
+    end
     
-    p2 = bar(separation_dist, label="Separation", c=:green, alpha=0.5)
+    p2 = plot(separation_dist, label="Separation", c=:green, lw=2, title="Global ESP Distance")
     
-    # Heatmap (Solo sitios individuales para legibilidad)
+    # Heatmap (Ordenado por qubit)
     h_mat = zeros(N, steps)
-    for (i, lbl) in enumerate(z_labels); h_mat[i, :] = dict_A[lbl]; end
-    p3 = heatmap(h_mat, c=:viridis, title="Reservoir Map", xlabel="Step", ylabel="Qubit")
+    for (i, lbl) in enumerate(z_labels)
+        q_idx = findfirst(basis_char, lbl)
+        if q_idx <= N; h_mat[q_idx, :] = dict_A[lbl]; end
+    end
+    p3 = heatmap(h_mat, c=:viridis, title="Reservoir Map ($b_str)", xlabel="Step", ylabel="Qubit")
 
     final = plot(p1, p2, p3, layout=@layout([a; b; c]), size=(850, 1000))
-    savefig(final, joinpath(save_dir, "Summary_Full_Validation.png"))
+    savefig(final, joinpath(save_dir, "Summary_Full_Validation_$(b_str).png"))
 end

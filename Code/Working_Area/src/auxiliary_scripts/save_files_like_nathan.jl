@@ -3,7 +3,7 @@ using JLD2, FileIO
 function save_qrc_results_jld2(N, steps, T_evol, h_val, inputs, expect_dict, folder_path)
     # 1. Convertimos la ruta a absoluta para evitar líos con el "../"
     # Esto asegura que se cree fuera de 'Working_Area' si usas "../"
-    full_folder_path = abspath(joinpath(@__DIR__, "../../", folder_path))
+    full_folder_path = abspath(joinpath(@__DIR__, "../../../", folder_path))
     
     # --- LA CORRECCIÓN: 'isdir' en lugar de 'ispread' ---
     if !isdir(full_folder_path)

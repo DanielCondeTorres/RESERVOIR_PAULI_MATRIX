@@ -1,88 +1,102 @@
-"""
-    plot_quick_validation_per_qubit(separation_dist, dict_A, inputs, N, save_dir)
+function get_basis_char(dict_data)
+    # Busca qué letra (X, Y, Z) predomina en las llaves
+    all_keys = collect(keys(dict_data))
+    for char in ['X', 'Y', 'Z']
+        if any(k -> contains(k, string(char)), all_keys)
+            return char
+        end
+    end
+    return 'Z' # Default
+end
 
-Genera una imagen por cada Qubit (del 1 al N) mostrando:
-1. (Arriba) La convergencia global ESP (Distancia entre trayectorias).
-2. (Abajo) La separabilidad específica de ESE qubit (Scatter plot).
+"""
+1. QUICK VALIDATION PER QUBIT (Auto-Detect)
+Genera: Quick_Validation_ESP_Qubit_X1.png, etc.
 """
 function plot_quick_validation_per_qubit(separation_dist, dict_A, inputs, N, save_dir)
-    println("📊 Generando Quick Validation detallada para cada Qubit (1 a $N)...")
+    basis_char = get_basis_char(dict_A)
+    b_str = string(basis_char)
+    println("📊 Generando Quick Validation ($b_str) para $N Qubits...")
     
-    # 1. Pre-calcular máscaras (Ignoramos los primeros 20 pasos de transitorio)
-    # Esto se hace una sola vez para ganar velocidad
-    len = length(inputs)
-    transient = 20
+    # Máscaras para scatter
+    len = length(inputs); transient = 20
     mask0 = (inputs .== 0) .& (1:len .> transient)
     mask1 = (inputs .== 1) .& (1:len .> transient)
     
-    # 2. Plot 1: ESP Distance (Es idéntico para todos los qubits)
-    # Lo definimos fuera del bucle para reutilizarlo
-    p1 = plot(separation_dist, label="ESP Distance", yscale=:log10, 
-              color=:red, lw=2, title="ESP Convergence (Global)",
-              xlabel="Steps", ylabel="||Rho_A - Rho_B||", 
-              legend=:topright, grid=true, gridalpha=0.3)
+    p1 = plot(separation_dist, label="ESP Dist", yscale=:log10, color=:red, 
+              title="Global ESP Convergence", xlabel="Step", ylabel="Dist")
     
-    # 3. Bucle para generar Scatter de cada Qubit individual
     for i in 1:N
-        # Construimos la etiqueta dinámica: ej. i=2, N=4 -> "1Z11"
-        lbl_vec = ["1" for _ in 1:N]
-        lbl_vec[i] = "Z"
-        lbl = join(lbl_vec)
+        # Construye etiqueta dinámica: ej "1X1111"
+        lbl_vec = ["1" for _ in 1:N]; lbl_vec[i] = b_str; lbl = join(lbl_vec)
         
         if haskey(dict_A, lbl)
             traj = dict_A[lbl]
+            p2 = scatter(findall(mask0), traj[mask0], label="In 0", color=:blue, ms=3, alpha=0.6)
+            scatter!(p2, findall(mask1), traj[mask1], label="In 1", color=:orange, ms=3, alpha=0.6,
+                     title="Qubit $i (<$lbl>)", ylabel="Exp <$b_str$i>")
             
-            # Plot 2: Scatter específico del Qubit i
-            p2 = scatter(findall(mask0), traj[mask0], label="Input 0 (|0>)", 
-                         color=:blue, ms=3, alpha=0.7, markerstrokewidth=0)
-            scatter!(p2, findall(mask1), traj[mask1], label="Input 1 (|+>)", 
-                     color=:orange, ms=3, alpha=0.7, markerstrokewidth=0,
-                     title="Separabilidad Qubit $i (<$lbl>)", 
-                     xlabel="Step", ylabel="Expectation <Z$i>")
-            
-            # Combinar ESP + Scatter
             p_final = plot(p1, p2, layout=(2,1), size=(800, 800))
-            
-            # Guardar archivo único para este qubit
-            filename = "Quick_Validation_ESP_Qubit_$(i).png"
-            output_path = joinpath(save_dir, filename)
-            savefig(p_final, output_path)
-            
-            # Solo hacemos display del primero para no saturar la pantalla
-            if i == 1; display(p_final); end
-        else
-            println("⚠️ Aviso: No se encontraron datos para el qubit $i (Etiqueta: $lbl)")
+            savefig(p_final, joinpath(save_dir, "Quick_Validation_ESP_Qubit_$(b_str)$(i).png"))
         end
     end
-    
-    println("✅ ¡Imágenes generadas! Revisa la carpeta: $save_dir")
 end
 
-
+"""
+2. SCATTER MAP ALL QUBITS (Auto-Detect)
+Genera: Separability_All_Qubits_Scatter_X.png
+"""
 function plot_all_qubits_scatter(dict_A, inputs, N, save_dir)    
-    # Calculamos layout (ej: 2 columnas)
-    cols = 2
-    rows = Int(ceil(N / cols))
-    p_global = plot(layout=(rows, cols), size=(900, 300*rows), title="Separability Map (All Qubits)")
+    basis_char = get_basis_char(dict_A)
+    b_str = string(basis_char)
+    
+    rows = Int(ceil(N / 2))
+    p_global = plot(layout=(rows, 2), size=(900, 300*rows), 
+                    title="Separability Map - Base $b_str")
+
+    mask0 = (inputs .== 0) .& (1:length(inputs) .> 20)
+    mask1 = (inputs .== 1) .& (1:length(inputs) .> 20)
 
     for i in 1:N
-        # Construir etiqueta: "111Z11" para el qubit i
-        lbl_vec = ["1" for _ in 1:N]
-        lbl_vec[i] = "Z"
-        lbl = join(lbl_vec)
+        lbl_vec = ["1" for _ in 1:N]; lbl_vec[i] = b_str; lbl = join(lbl_vec)
         
         if haskey(dict_A, lbl)
             traj = dict_A[lbl]
-            # Filtramos el transitorio inicial (> 20) para ver la separabilidad real
-            mask0 = (inputs .== 0) .& (1:length(inputs) .> 20)
-            mask1 = (inputs .== 1) .& (1:length(inputs) .> 20)
-            
-            scatter!(p_global[i], findall(mask0), traj[mask0], label="In 0", color=:blue, ms=2, alpha=0.6)
-            scatter!(p_global[i], findall(mask1), traj[mask1], label="In 1", color=:orange, ms=2, alpha=0.6,
-                     title="Qubit $i", ylabel="<$lbl>", legend=(i==1))
+            scatter!(p_global[i], findall(mask0), traj[mask0], label="In 0", c=:blue, ms=2, alpha=0.6)
+            scatter!(p_global[i], findall(mask1), traj[mask1], label="In 1", c=:orange, ms=2, alpha=0.6,
+                     title="Q$i ($lbl)", legend=false)
         end
     end
-    
-    savefig(p_global, joinpath(save_dir, "Separability_All_Qubits_Scatter.png"))
-    display(p_global)
+    savefig(p_global, joinpath(save_dir, "Separability_All_Qubits_Scatter_$(b_str).png"))
+end
+
+"""
+3. BOXPLOTS (Auto-Detect + Sorting Fix)
+Genera: Separability_Boxplots_X.png
+"""
+function plot_separability_boxplots(dict_A, inputs, N, save_dir)
+    basis_char = get_basis_char(dict_A)
+    b_str = string(basis_char)
+    println("📦 Generando Boxplots ($b_str)...")
+
+    # Filtramos solo las etiquetas individuales de la base correcta
+    # Y ordenamos por la posición del carácter (para que Q1 salga primero)
+    raw_labels = [l for l in keys(dict_A) if count(c -> c == basis_char, l) == 1]
+    sorted_labels = sort(raw_labels, by = x -> findfirst(basis_char, x))
+
+    rows = Int(ceil(N/3))
+    p = plot(layout=(rows, 3), size=(1000, 350*rows), title="Boxplots Base $b_str")
+
+    for (i, lbl) in enumerate(sorted_labels)
+        # Recuperar el índice real del qubit desde la etiqueta
+        q_idx = findfirst(basis_char, lbl)
+        
+        valid_indices = 21:length(inputs) # Skip transient
+        data0 = dict_A[lbl][valid_indices][inputs[valid_indices] .== 0]
+        data1 = dict_A[lbl][valid_indices][inputs[valid_indices] .== 1]
+        
+        boxplot!(p[i], [fill("In 0", length(data0)); fill("In 1", length(data1))], 
+                 [data0; data1], title="Q$q_idx ($lbl)", legend=false, c=[:blue :red], alpha=0.6)
+    end
+    savefig(p, joinpath(save_dir, "Separability_Boxplots_$(b_str).png"))
 end
