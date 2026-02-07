@@ -40,9 +40,10 @@ h_val = 1.0
 gamma = 0.005       
 n_substeps = 100
 dt = T_evol / n_substeps
-Experiment_name = "Schrodinger_Full_Tomography_XYZ"
+Experiment_name = "Schrodinger_Full_Tomography_XYZ_projective_true"
 Experiment_path = joinpath(SCRIPT_DIR, "../$Experiment_name")
-
+projective_mode = true
+gamma_value = 0.5
 if !isdir(Experiment_path); mkpath(Experiment_path); end
 
 
@@ -66,6 +67,7 @@ function run_schrodinger_esp_task()
     println("📦 Calculando observables X, Y, Z...")
     obs_matrices = Dict{String, Matrix{ComplexF64}}()
     all_labels = String[]
+    #Pauli matrices
     sx=[0. 1.; 1. 0.]; sy=[0. -im; im 0.]; sz=[1. 0.; 0. -1.]; id=[1. 0.; 0. 1.]
     
     for (b_char, b_op) in zip(['X','Y','Z'], [sx, sy, sz])
@@ -112,10 +114,28 @@ function run_schrodinger_esp_task()
 
         # MEDIR
         d_sq = 0.0
+
         for (lbl, op) in obs_matrices
-            val_A = real(tr(rho_A * op)); val_B = real(tr(rho_B * op))
-            dict_A[lbl][k] = val_A; dict_B[lbl][k] = val_B
+            # --- NUEVA LLAMADA ---
+            # 1. Medimos A
+            val_A, rho_A_new = measure_observable_matrix(rho_A, op, projective=projective_mode,gamma_value)
+            
+            # 2. Medimos B
+            val_B, rho_B_new = measure_observable_matrix(rho_B, op, projective=projective_mode,gamma_value)
+            ##### Medida sin romper
+            #val_A = real(tr(rho_A * op)); val_B = real(tr(rho_B * op))
+            # 3. Guardamos datos
+            dict_A[lbl][k] = val_A
+            dict_B[lbl][k] = val_B
             d_sq += (val_A - val_B)^2
+            
+            # 4. ACTUALIZAR RHO (Solo si hay backaction)
+            # Si projective_mode es true, esto actualiza el estado al colapsado.
+            # Si es false, rho_A_new es igual al rho_A viejo, así que no pasa nada.
+            if projective_mode
+                rho_A = rho_A_new
+                rho_B = rho_B_new
+            end
         end
         separation_dist[k] = sqrt(d_sq)
         if k%10==0; print("\rStep $k"); end
