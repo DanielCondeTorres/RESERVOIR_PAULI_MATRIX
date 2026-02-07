@@ -50,7 +50,7 @@ end
 Construye el modelo Rotado/Dual (Interacción XX, Campo Z).
 Corresponde a la captura del paper de Nathan (Eq. 32).
 
-Fórmula: H = + ∑ J_i X_i X_{i+1} - (h/2) ∑ Z_i
+Fórmula: H = + ∑ J_i X_i X_{i+1} - (h) ∑ Z_i
 """
 function hamiltonian_nathan_XX(n_qubits::Int, J_exactos::Vector{Float64}, h_exacto::Float64)
     H = Operator()
@@ -70,7 +70,7 @@ function hamiltonian_nathan_XX(n_qubits::Int, J_exactos::Vector{Float64}, h_exac
     for i in 0:(n_qubits-1)
         z_mask = (1 << i)
         p_z = PauliString(0, z_mask)
-        H[p_z] = -(h_exacto / 2.0)
+        H[p_z] = -(h_exacto )
     end
     
     return H
@@ -87,7 +87,7 @@ end
     build_nathan_all_to_all_XX(n_qubits::Int, h::Float64; seed::Int=12345) -> Operator
 
 Construye el Hamiltoniano de la Eq (32) versión All-to-All:
-H = - (h/2) ∑ Z_j + ∑_{i<j} J_{ij} X_i X_j
+H = - (h) ∑ Z_j + ∑_{i<j} J_{ij} X_i X_j
 
 # Parámetros
 - `n_qubits`: Número de sitios (ej. 6).
@@ -102,7 +102,7 @@ function build_nathan_all_to_all_XX(n_qubits::Int, h::Float64; seed::Int=12345)
     # En tu máscara: PauliString(x_mask, z_mask)
     for j in 0:(n_qubits - 1)
         p_z = PauliString(0, 1 << j) # Z en el sitio j
-        H[p_z] = get(H, p_z, 0.0im) - (h / 2.0)
+        H[p_z] = get(H, p_z, 0.0im) - (h)
     end
 
     # 2. Término de Interacción All-to-All: J_ij * X_i * X_j

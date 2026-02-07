@@ -60,3 +60,53 @@ function plot_and_save_validation(hist_A, hist_B, separation_dist, N, steps, sav
     
     println("   ➜ Resumen guardado en: $summary_path")
 end
+
+
+
+
+
+function plot_and_save_validation_full(dict_A, dict_B, separation_dist, N, steps, save_dir)
+    println("📊 Generando reporte detallado...")
+
+    # Crear carpetas para organizar
+    path_indiv = joinpath(save_dir, "Individual_Z")
+    path_pairs = joinpath(save_dir, "Correlations_ZZ")
+    mkpath(path_indiv); mkpath(path_pairs)
+
+    all_labels = collect(keys(dict_A))
+    z_labels = sort([l for l in all_labels if count(c -> c == 'Z', l) == 1])
+    zz_labels = sort([l for l in all_labels if count(c -> c == 'Z', l) == 2])
+
+    # 1. Gráficas individuales ESP para cada qubit
+    for lbl in z_labels
+        idx = findfirst('Z', lbl)
+        p = plot(dict_A[lbl], label="Tray. A", c=:blue, lw=1.5, title="ESP: Qubit $idx")
+        plot!(p, dict_B[lbl], label="Tray. B", c=:red, ls=:dash, lw=1.5)
+        ylims!(p, (-0.015, 0.015)) 
+        savefig(p, joinpath(path_indiv, "ESP_Z$idx.png"))
+    end
+
+    # 2. Gráficas para pares ZZ
+    for lbl in zz_labels
+        indices = [i for (i, c) in enumerate(lbl) if c == 'Z']
+        tag = "Z$(indices[1])Z$(indices[2])"
+        p = plot(dict_A[lbl], label="Tray. A", c=:blue, lw=1.5, title="ESP Pair: $tag")
+        plot!(p, dict_B[lbl], label="Tray. B", c=:red, ls=:dash, lw=1.5)
+        #ylims!(p, (-0.015, 0.015)) 
+        savefig(p, joinpath(path_pairs, "ESP_$tag.png"))
+    end
+
+    # 3. Resumen combinado
+    p1 = plot(dict_A[zz_labels[1]], label="Tray. A", c=:blue, title="ESP Sample (ZZ)")
+    plot!(p1, dict_B[zz_labels[1]], label="Tray. B", c=:red, ls=:dash)
+    
+    p2 = bar(separation_dist, label="Separation", c=:green, alpha=0.5)
+    
+    # Heatmap (Solo sitios individuales para legibilidad)
+    h_mat = zeros(N, steps)
+    for (i, lbl) in enumerate(z_labels); h_mat[i, :] = dict_A[lbl]; end
+    p3 = heatmap(h_mat, c=:viridis, title="Reservoir Map", xlabel="Step", ylabel="Qubit")
+
+    final = plot(p1, p2, p3, layout=@layout([a; b; c]), size=(850, 1000))
+    savefig(final, joinpath(save_dir, "Summary_Full_Validation.png"))
+end
