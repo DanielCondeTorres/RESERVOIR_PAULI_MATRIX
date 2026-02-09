@@ -42,7 +42,7 @@ h_val = 1.0
 gamma = 0.04      
 n_substeps = 100
 dt = T_evol / n_substeps
-Experiment_name = "Schrodinger_Full_Tomography_XYZ_projective_false"
+Experiment_name = "Schrodinger_Full_Tomography_XYZ_projective_false_continuo"
 Experiment_path = joinpath(SCRIPT_DIR, "../$Experiment_name")
 projective_mode = false
 gamma_value = 0.8
@@ -69,7 +69,7 @@ function run_schrodinger_esp_task()
     H_dense = operator_to_dense_matrix(H_op, N)
     rho_A = operator_to_dense_matrix(initial_state_all_zeros(N), N)
     rho_B = operator_to_dense_matrix(initial_state_all_ones(N), N)
-    Random.seed!(1234); inputs = rand(0:1, steps)
+    Random.seed!(1234); inputs = rand(steps)#inputs = rand(0:1, steps)
 
     # B. Observables X, Y, Z
     println("📦 Calculando observables X, Y, Z...")
@@ -117,8 +117,8 @@ function run_schrodinger_esp_task()
         end
         
         # DEPHASING Z
-        rho_A = apply_global_dephasing_schrodinger(rho_A, gamma, "Z")
-        rho_B = apply_global_dephasing_schrodinger(rho_B, gamma, "Z")
+        rho_A = apply_global_dephasing_matrix(rho_A, gamma, "Z")
+        rho_B = apply_global_dephasing_matrix(rho_B, gamma, "Z")
 
         # MEDIR
         d_sq = 0.0

@@ -70,6 +70,42 @@ end
         # ==============================================================================
 # DEPHASING PARA MATRICES DENSAS (Schrödinger)
 # ==============================================================================
+
+
+# --- FUNCIONES AUXILIARES DE ROTACIÓN ---
+
+function rotate_density_matrix(rho, axis, n_qubits; inverse=false)
+    axis_norm = uppercase(axis)
+    if axis_norm == "Z"
+        return rho # No hace falta rotar para Z
+    end
+    
+    # Definir el gate de rotación local
+    gate = if axis_norm == "X"
+        # Hadamard mueve Z -> X
+        1/sqrt(2) * [1.0 1.0; 1.0 -1.0]
+    elseif axis_norm == "Y"
+        # Rx(π/2) mueve Z -> Y
+        # U = exp(-i π/4 X)
+        1/sqrt(2) * [1.0 -1.0im; -1.0im 1.0]
+    end
+    
+    if inverse; gate = gate'; end
+    
+    # Construir el operador global U = g ⊗ g ⊗ g...
+    U_global = gate
+    for i in 2:n_qubits
+        U_global = kron(U_global, gate)
+    end
+    
+    # Aplicar transformación adjunta: U * rho * U'
+    return U_global * rho * U_global'
+end
+
+
+
+
+
 using LinearAlgebra
 
 """
@@ -106,34 +142,4 @@ function apply_global_dephasing_matrix(rho::Matrix{ComplexF64}, g::Float64, axis
     
     # 3. VOLVER A LA BASE ORIGINAL
     return rotate_density_matrix(new_rho, axis, n_qubits, inverse=true)
-end
-
-# --- FUNCIONES AUXILIARES DE ROTACIÓN ---
-
-function rotate_density_matrix(rho, axis, n_qubits, inverse=false)
-    axis_norm = uppercase(axis)
-    if axis_norm == "Z"
-        return rho # No hace falta rotar para Z
-    end
-    
-    # Definir el gate de rotación local
-    gate = if axis_norm == "X"
-        # Hadamard mueve Z -> X
-        1/sqrt(2) * [1.0 1.0; 1.0 -1.0]
-    elseif axis_norm == "Y"
-        # Rx(π/2) mueve Z -> Y
-        # U = exp(-i π/4 X)
-        1/sqrt(2) * [1.0 -1.0im; -1.0im 1.0]
-    end
-    
-    if inverse; gate = gate'; end
-    
-    # Construir el operador global U = g ⊗ g ⊗ g...
-    U_global = gate
-    for i in 2:n_qubits
-        U_global = kron(U_global, gate)
-    end
-    
-    # Aplicar transformación adjunta: U * rho * U'
-    return U_global * rho * U_global'
 end
