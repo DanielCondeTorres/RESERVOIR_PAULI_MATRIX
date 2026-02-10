@@ -64,6 +64,17 @@ end
 
 
 
+
+
+
+
+
+
+
+
+
+
+
 function plot_and_save_validation_full(dict_A, dict_B, separation_dist, N, steps, save_dir; label_A="Tray. A", label_B="Tray. B")
     println("📊 Generando reporte detallado ($label_A vs $label_B)...")
 
@@ -82,32 +93,30 @@ function plot_and_save_validation_full(dict_A, dict_B, separation_dist, N, steps
     # 2. Crear carpetas con nombres dinámicos
     path_indiv = joinpath(save_dir, "Individual_$(b_str)")
     path_pairs = joinpath(save_dir, "Correlations_$(b_str)$(b_str)")
-    mkpath(path_indiv); mkpath(path_pairs)
+    path_triads = joinpath(save_dir, "Correlations_$(b_str)$(b_str)$(b_str)") # <--- NUEVA CARPETA
+    
+    mkpath(path_indiv); mkpath(path_pairs); mkpath(path_triads)
 
-    # 3. Filtrar etiquetas usando la base detectada
-    # Nota: Filtramos asegurando que sean strings válidos
+    # 3. Filtrar etiquetas
+    # Individuales (1 letra), Pares (2 letras), Tríadas (3 letras)
     z_labels = sort([l for l in all_labels if count(c -> c == basis_char, l) == 1])
     zz_labels = sort([l for l in all_labels if count(c -> c == basis_char, l) == 2])
+    zzz_labels = sort([l for l in all_labels if count(c -> c == basis_char, l) == 3]) # <--- FILTRO NUEVO
 
-    # 4. Gráficas individuales (Ej: X1, X2...)
+    # 4. Gráficas individuales
     for lbl in z_labels
-        # Buscar índice del qubit (ej: Z11111 -> idx 1)
-        # Hack simple: buscamos la posición del char
         idx = findfirst(isequal(basis_char), lbl) 
-        
-        # Título y nombre de archivo dinámico
         p = plot(dict_A[lbl], label=label_A, c=:blue, lw=1.5, title="ESP: Qubit $idx ($b_str)")
         plot!(p, dict_B[lbl], label=label_B, c=:red, ls=:dash, lw=1.5)
         ylims!(p, -1.1, 1.1)
         savefig(p, joinpath(path_indiv, "ESP_$(b_str)$idx.png"))
     end
 
-    # 5. Gráficas para pares (Ej: X4X5...)
+    # 5. Gráficas para pares
     for lbl in zz_labels
         indices = [i for (i, c) in enumerate(lbl) if c == basis_char]
         if length(indices) >= 2
             tag = "$(b_str)$(indices[1])$(b_str)$(indices[2])"
-            
             p = plot(dict_A[lbl], label=label_A, c=:blue, lw=1.5, title="ESP Pair: $tag")
             plot!(p, dict_B[lbl], label=label_B, c=:red, ls=:dash, lw=1.5)
             ylims!(p, -1.1, 1.1)
@@ -115,10 +124,22 @@ function plot_and_save_validation_full(dict_A, dict_B, separation_dist, N, steps
         end
     end
 
-    # 6. Resumen combinado
+    # 6. NUEVO: Gráficas para Tríadas (Xi Xj Xk)
+    for lbl in zzz_labels
+        indices = [i for (i, c) in enumerate(lbl) if c == basis_char]
+        if length(indices) >= 3
+            tag = "$(b_str)$(indices[1])$(b_str)$(indices[2])$(b_str)$(indices[3])"
+            
+            p = plot(dict_A[lbl], label=label_A, c=:blue, lw=1.0, title="ESP Triad: $tag")
+            plot!(p, dict_B[lbl], label=label_B, c=:red, ls=:dash, lw=1.0)
+            ylims!(p, -1.1, 1.1)
+            savefig(p, joinpath(path_triads, "ESP_$tag.png"))
+        end
+    end
+
+    # 7. Resumen combinado
     p1 = plot(title="Sample Comparison")
     if !isempty(z_labels)
-        # Usamos el primer qubit individual como ejemplo
         sample_lbl = z_labels[1]
         p1 = plot(dict_A[sample_lbl], label=label_A, c=:blue, title="Sample ($sample_lbl)")
         plot!(p1, dict_B[sample_lbl], label=label_B, c=:red, ls=:dash)
@@ -127,7 +148,7 @@ function plot_and_save_validation_full(dict_A, dict_B, separation_dist, N, steps
     
     p2 = plot(separation_dist, label="Distance", c=:green, lw=2, title="Separation ($label_A - $label_B)")
     
-    # Heatmap (Ordenado por qubit)
+    # Heatmap (Solo 1-body para no saturar)
     h_mat = zeros(N, steps)
     for lbl in z_labels
         q_idx = findfirst(isequal(basis_char), lbl)
