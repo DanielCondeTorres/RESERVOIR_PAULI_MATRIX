@@ -1,0 +1,4 @@
+juliaup status
+juliaup default 1.8.5
+juliaup 1.8.5
+

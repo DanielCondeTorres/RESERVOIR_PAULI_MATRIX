@@ -1,57 +1,98 @@
-using JLD2
+using HDF5
 using CSV
 using DataFrames
 
-# --- Configuración de Rutas ---
-# Usamos expanduser para que entienda el símbolo "~"
-archivo_entrada = expanduser("~/Desktop/IBM_EXAMENES/TFM/RESERVOIR_PAULI_MATRIX/Code/Nathan_Foundation_AllToAll_FullZ/nathan_foundation_6_steps100_full.jld2")
-#archivo_entrada = expanduser("~/Desktop/IBM_EXAMENES/TFM/RESERVOIR_PAULI_MATRIX/archivos_comparar_nathan/resultado_simulacion_Z.jld2")
-# Carpeta de salida (sin nombre de archivo, porque lo generaremos automático)
-#carpeta_salida  = expanduser("~/Desktop/IBM_EXAMENES/TFM/RESERVOIR_PAULI_MATRIX/Code/csv_transformation_dani_to_nathan/")
-carpeta_salida  = expanduser("~/Desktop/IBM_EXAMENES/TFM/RESERVOIR_PAULI_MATRIX/Code/Nathan_Foundation_AllToAll_FullZ/csv_transformation_2/")
-# Crear carpeta si no existe
-mkpath(carpeta_salida)
+# --- 1. CONFIGURACIÓN DE RUTAS ---
+archivo_jld2 = expanduser("~/Desktop/IBM_EXAMENES/TFM/RESERVOIR_PAULI_MATRIX/Code/Input_Data/results_4_STM.jld2")
+directorio_salida = expanduser("~/Desktop/IBM_EXAMENES/TFM/RESERVOIR_PAULI_MATRIX/Code/SEE_NATHAN/")
+archivo_csv_final = joinpath(directorio_salida, "MASTER_DATA_CONSOLIDATED.csv")
 
-# --- Cargar JLD2 ---
-println("📂 Abriendo: $archivo_entrada")
-contenido = load(archivo_entrada)
-variables = keys(contenido)
+# Crear la carpeta por si acaso
+mkpath(directorio_salida)
 
-println("Variables encontradas: $variables")
-println("------------------------------------------------")
+println("🚀 Iniciando Extracción Maestra...")
+println("📂 Origen: $archivo_jld2")
 
-# --- Bucle: Procesar cada variable encontrada ---
-for var_nombre in variables
-    datos = contenido[var_nombre]
-    println("🔄 Procesando variable: '$var_nombre' ...")
-    
-    # 1. Convertir a DataFrame según el tipo de dato
-    df_final = try
-        if datos isa DataFrame
-            datos
-        elseif datos isa Dict
-            # Si es un Diccionario, lo convertimos a tabla Key-Value
-            println("   ↳ Detectado Diccionario. Convirtiendo a formato Clave-Valor.")
-            DataFrame(Clave = collect(keys(datos)), Valor = collect(values(datos)))
-        else
-            # Intento genérico para matrices u otros
-            println("   ↳ Tipo de dato: $(typeof(datos)). Intentando conversión automática.")
-            DataFrame(datos, :auto)
+# Lista para acumular los datos
+datos_acumulados = []
+
+# Función para procesar y acumular
+function acumular_numeros(datos, etiqueta)
+    if datos isa AbstractArray{<:Number} || datos isa AbstractArray{ComplexF64}
+        val_vec = vec(collect(datos))
+        for (idx, v) in enumerate(val_vec)
+            push!(datos_acumulados, (
+                Ruta = etiqueta,
+                Indice = idx,
+                Real = real(v),
+                Imag = imag(v)
+            ))
         end
-    catch e
-        println("   ❌ Error convirtiendo '$var_nombre'. Saltando...")
-        continue
+        return true
     end
-
-    # 2. Generar nombre de archivo único
-    # Ejemplo: 6_1_2_all_zeros_12_expect_dict.csv
-    nombre_base = splitext(basename(archivo_entrada))[1]
-    archivo_csv = joinpath(carpeta_salida, "$(nombre_base)_$(var_nombre).csv")
-
-    # 3. Guardar
-    CSV.write(archivo_csv, df_final)
-    println("   ✅ Guardado: $archivo_csv")
+    return false
 end
 
-println("------------------------------------------------")
-println("¡Proceso terminado!")
+# Función recursiva profunda
+function explorar_y_consolidar(obj, nombre, h5file)
+    # A. Si es un Dataset
+    if obj isa HDF5.Dataset
+        contenido = try read(obj) catch; return end
+        
+        # 1. ¿Son números directos?
+        if acumular_numeros(contenido, nombre)
+            return
+        end
+
+        # 2. ¿Es una referencia?
+        if contenido isa HDF5.Reference
+            try explorar_y_consolidar(h5file[contenido], nombre * "_ref", h5file) catch; end
+        
+        # 3. ¿Es una lista de referencias? (Diccionarios JLD2)
+        elseif contenido isa AbstractArray{HDF5.Reference}
+            for (i, r) in enumerate(contenido)
+                try explorar_y_consolidar(h5file[r], nombre * "_i$i", h5file) catch; end
+            end
+            
+        # 4. ¿Es un NamedTuple (como el kvvec)?
+        elseif contenido isa NamedTuple
+            for campo in keys(contenido)
+                val = getfield(contenido, campo)
+                if val isa HDF5.Reference
+                    try explorar_y_consolidar(h5file[val], nombre * "_$campo", h5file) catch; end
+                end
+            end
+        end
+
+    # B. Si es un Grupo
+    elseif obj isa HDF5.Group
+        for k in keys(obj)
+            if !startswith(k, "_")
+                explorar_y_consolidar(obj[k], nombre * "/" * k, h5file)
+            end
+        end
+    end
+end
+
+# --- 2. EJECUCIÓN ---
+h5open(archivo_jld2, "r") do file
+    for k in keys(file)
+        if !startswith(k, "_")
+            println("🔍 Escaneando rama: $k")
+            explorar_y_consolidar(file[k], k, file)
+        end
+    end
+end
+
+println("\n------------------------------------------------")
+total_puntos = length(datos_acumulados)
+println("📊 Puntos de datos recolectados: $total_puntos")
+
+if total_puntos > 0
+    println("💾 Escribiendo archivo CSV en: $archivo_csv_final")
+    df_final = DataFrame(datos_acumulados)
+    CSV.write(archivo_csv_final, df_final)
+    println("✅ ¡ÉXITO! Archivo creado correctamente.")
+else
+    println("❌ ERROR: No se encontró ningún dato numérico. El CSV no se creó.")
+end
