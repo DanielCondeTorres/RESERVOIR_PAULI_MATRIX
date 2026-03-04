@@ -28,7 +28,7 @@ include_rel("src/saver/save_plots.jl")
 
 
 include_rel("src/visualization/visualization_comparision.jl")
-
+include_rel("src/utils/capacity.jl")
 
 
 
@@ -60,32 +60,6 @@ include_rel("src/visualization/visualization_comparision.jl")
 #NEW INPUT FILES USING JSON (for better readability), BECAUSE PREVIOUS PROBLEMS
 
 json_raw = "/Users/danielcondetorres/Desktop/IBM_EXAMENES/TFM_NATHAN/TFM_VERSION_2/Code/Input_Data/results.json"
-
-
-#Save files:
-#Save files:
-Experiment_name = "OPERATOR" # Where i save the files
-# Usamos abspath para forzar la ruta completa desde la raíz de tu Mac
-Experiment_path = abspath(joinpath(SCRIPT_DIR, "../$Experiment_name"))
-projective_mode = false # Not using it
-if !isdir(Experiment_path); mkpath(Experiment_path); end
-
-println("📁 TODAS LAS GRÁFICAS Y DATOS IRÁN A: $Experiment_path")
-# --- SETUP SISTEMA (Usando parámetros del archivo) ---
-#T_evol = 10.0        
-#Js= 1.
-#N = 6#Int(meta["N"])
-#h_val =10.0# Float64(meta["h"])
-#gamma = 1.0 #Float64(meta["g"]) 
-#J_vec_file = nothing  # Vector{Float64}(meta["Jvec"])
-#Random.seed!(1234)
-#steps =  Int(meta["num_steps"])
-#steps = 100
-#inputs = rand(steps)
-#inputs = Vector{Float64}(meta["s_vec"]) 
-#n_substeps =100
-#dt = 10*Js# meta["dt"]
-
 datos = JSON.parsefile(json_raw)
 
 # 2. Navegar hasta la meta-data
@@ -93,14 +67,45 @@ datos = JSON.parsefile(json_raw)
 llave_raiz = collect(keys(datos["data"]))[1]
 meta = datos["data"][llave_raiz]["meta"]
 
+#Save files:
+#Save files:
+Experiment_name = "EVALUACION_RK4_SIN_ERA_WRITE_SIN_DEPHASING_SIN_TRUNCATE" # Where i save the files
+# Usamos abspath para forzar la ruta completa desde la raíz de tu Mac
+Experiment_path = abspath(joinpath(SCRIPT_DIR, "../$Experiment_name"))
+projective_mode = false # Not using it
+if !isdir(Experiment_path); mkpath(Experiment_path); end
+
+println("📁 TODAS LAS GRÁFICAS Y DATOS IRÁN A: $Experiment_path")
+# --- SETUP SISTEMA (Usando parámetros del archivo) ---
+T_evol = 10.0        
+Js= 1.
+N = 6#Int(meta["N"])
+h_val = Float64(meta["h"])
+gamma = Float64(meta["g"]) 
+J_vec_file = nothing  # Vector{Float64}(meta["Jvec"])
+Random.seed!(1234)
+steps = 100
+inputs = Float64.(rand(0:1, steps))
+#inputs=rand(steps)
+n_substeps = 1000  
+#inputs = Vector{Float64}(meta["s_vec"]) 
+
+
+
+
+
+
+
+
 # 3. ASIGNACIÓN AUTOMÁTICA DE TUS VARIABLES
-N = Int(meta["N"])               # Ahora será 4 automáticamente
+N = 6#Int(meta["N"])               # Ahora será 4 automáticamente
 h_val = Float64(meta["h"])       # 10.0
 gamma = Float64(meta["g"])       # 0.3
 T_evol = Float64(meta["Δt"])     # 10.0
-steps = Int(meta["num_steps"])   # 10
-inputs = Float64.(meta["s_vec"]) # [1.0, 1.0, 1.0, 1.0, 0.0, ...]
-
+#steps = Int(meta["num_steps"])   # 10
+#inputs = Float64.(meta["s_vec"]) # [1.0, 1.0, 1.0, 1.0, 0.0, ...]
+steps = 100
+inputs=rand(steps)
 # Para el J_vec_file (los acoplamientos):
 # Como Nathan guardó un Jdict, extraemos solo los valores numéricos
 J_dict = meta["Jdict"]
@@ -112,6 +117,7 @@ GATE_WHERE_DEPHASING_IS_APPLIED="Z"
 println("\n LOADED PARAMETERS:")
 println("-"^40)
 println("N (Qubits):      $N")
+println("Inputs:      $inputs")
 println("h (Transversal): $h_val")
 println("Gamma (g):       $gamma")
 println("Steps (Pasos):   $steps")
@@ -145,7 +151,7 @@ function run_task_pauli()
 
     # --- PERTURBACIÓN TRAYECTORIA C ---
     inputs_C = copy(inputs)
-    step_perturbation = 30
+    step_perturbation = 50
     if steps > step_perturbation
         # A partir del paso 30, la entrada C diverge de la A
         inputs_C[step_perturbation+1:end] = rand(steps - step_perturbation)
@@ -158,7 +164,7 @@ function run_task_pauli()
     dict_C = Dict(lbl => zeros(Float64, steps) for lbl in all_labels)
 
     # Sub-pasos para estabilidad unitaria en el integrador RK4
-    n_substeps = 1000 
+    
     dt_sub = T_evol / n_substeps 
 
     # ==========================================================================
@@ -172,9 +178,9 @@ function run_task_pauli()
         rx, ry = 0.0, 0.0
 
         # A. INYECCIÓN: Erase & Write (Reset local en Qubit 1)
-        #rho_A = inject_state_EraseWrite_pauli(rho_A, 0, rz_A, rx, ry)
-        #rho_B = inject_state_EraseWrite_pauli(rho_B, 0, rz_A, rx, ry)
-        #rho_C = inject_state_EraseWrite_pauli(rho_C, 0, rz_C, rx, ry)
+        rho_A = inject_state_EraseWrite_pauli(rho_A, 0, rz_A, rx, ry)
+        rho_B = inject_state_EraseWrite_pauli(rho_B, 0, rz_A, rx, ry)
+        rho_C = inject_state_EraseWrite_pauli(rho_C, 0, rz_C, rx, ry)
 
         # B. EVOLUCIÓN UNITARIA: Usando tu step_rk4
         for _ in 1:n_substeps
@@ -182,16 +188,16 @@ function run_task_pauli()
             rho_B = step_rk4(rho_B, H_op, dt_sub)
             rho_C = step_rk4(rho_C, H_op, dt_sub)
 
-            #MAX_TERMS = 1000 # El valor M que decidas (ej. 1000, 5000...)
-            #rho_A = truncate_operator(rho_A, MAX_TERMS)
-            #rho_B = truncate_operator(rho_A, MAX_TERMS)
-            #rho_C = truncate_operator(rho_A, MAX_TERMS)
+            MAX_TERMS = 1000 # El valor M que decidas (ej. 1000, 5000...)
+            rho_A = truncate_operator(rho_A, MAX_TERMS)
+            rho_B = truncate_operator(rho_B, MAX_TERMS)
+            rho_C = truncate_operator(rho_C, MAX_TERMS)
         end
 
-        # C. RUIDO: Dephasing Global
-        #rho_A = apply_global_dephasing(rho_A, gamma, GATE_WHERE_DEPHASING_IS_APPLIED)
-        #rho_B = apply_global_dephasing(rho_B, gamma, GATE_WHERE_DEPHASING_IS_APPLIED)
-        #rho_C = apply_global_dephasing(rho_C, gamma, GATE_WHERE_DEPHASING_IS_APPLIED)
+        # C. Dephasing Global
+        rho_A = apply_global_dephasing(rho_A, gamma, GATE_WHERE_DEPHASING_IS_APPLIED)
+        rho_B = apply_global_dephasing(rho_B, gamma, GATE_WHERE_DEPHASING_IS_APPLIED)
+        rho_C = apply_global_dephasing(rho_C, gamma, GATE_WHERE_DEPHASING_IS_APPLIED)
 
         # D. MEDIDA: <P> = c_k * 2^N
         for lbl in all_labels
@@ -231,6 +237,20 @@ function run_task_pauli()
     # ¡¡¡¡AQUÍ ESTABA EL ERROR!!!! TIENE QUE SER Experiment_path
     save_qrc_results_jld2(N, steps, T_evol, h_val, inputs, dict_A, Experiment_path)
     println("\n✅ Benchmarking completado correctamente.")
+
+
+
+    println("\n📊 Calculando Short-Term Memory Capacity...")
+    all_labels_A = collect(keys(dict_A))
+    states_matrix_A = zeros(Float64, steps, length(all_labels_A))
+    for (j, lbl) in enumerate(all_labels_A)
+        states_matrix_A[:, j] .= dict_A[lbl]
+    end
+    # Using tau_max = 10, washout = 10 (discard first 10 steps)
+    capacity_A = calculate_stm_capacity(states_matrix_A, inputs, 10; washout=10)
+    # Plot capacity
+    plot_stm_capacity(capacity_A, joinpath(Experiment_path, "STM_Capacity.png"))
+        
 end
 plt =  guardar_graficas_individuales(json_raw,Experiment_path)
 display(plt)
